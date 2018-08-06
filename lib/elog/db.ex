@@ -1,8 +1,65 @@
 defmodule Elog.Db do
-  defstruct dataoms: []
+  alias Elog.Datom
 
-  def new() do
-    %__MODULE__{}
+  defstruct index: []
+
+  defprotocol Index do
+    def new(this, datoms)
+    def get(this, k)
+    def insert(this, datoms)
+  end
+
+  defmodule MapEAVT do
+    defstruct data: %{}
+  end
+
+  defimpl Index, for: MapEAVT do
+    def new(this, datoms) do
+      Enum.reduce(datoms, %{}, fn val, acc ->
+        IO.inspect(val, label: "val")
+
+        {_, new_acc} =
+          Map.get_and_update(acc, val.e, fn
+            nil ->
+              {nil, [val]}
+
+            current_value ->
+              {nil, [val | current_value]}
+          end)
+
+        new_acc
+      end)
+    end
+  end
+
+  @doc """
+      iex> import Elog.Db
+      iex> data = [%{name: "Bill", eye_color: "blue"}, %{name: "Suzy", eye_color: "brown"}]
+      iex> new(data)
+      :ok
+  """
+  def new(maps, options \\ %{index: :eavt}) when is_list(maps) and is_map(options) do
+    transaction_id = :erlang.monotonic_time()
+    datoms = Enum.flat_map(maps, &to_datom(&1, transaction_id))
+
+    index =
+      case options[:index] do
+        :eavt ->
+          Index.new(%MapEAVT{}, datoms)
+
+        other_index ->
+          raise "#{other_index} not implemented yet"
+      end
+
+    %__MODULE__{index: index}
+  end
+
+  defp to_datom(map, transaction_id) do
+    entity_id = :erlang.monotonic_time()
+
+    Enum.map(map, fn {k, v} ->
+      %Datom{e: entity_id, a: k, v: v, t: transaction_id}
+    end)
   end
 
   @doc """
