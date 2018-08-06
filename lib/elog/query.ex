@@ -24,7 +24,8 @@ defmodule Elog.Query do
       |> extract_finds(q[:find])
   end
 
-  def validate(%{find: find, where: where} = q) when is_map(q) and is_list(find) and is_list(where) do
+  def validate(%{find: find, where: where} = q)
+      when is_map(q) and is_list(find) and is_list(where) do
     q
   end
 
@@ -67,16 +68,16 @@ defmodule Elog.Query do
   def to_relations(%{find: find, where: [where | wheres]} = q, relations, db, relation_number) do
     Logger.debug("building relation #{relation_number}")
     symbols = compute_symbols(where)
+    vars =
+      symbols
+      |> Enum.map(fn {{:var, var} = v, _} -> v end)
+      |> MapSet.new()
 
     tuples =
       filter_tuples(where, db)
       |> datoms_to_tuples(symbols)
 
-    relation =
-      %{symbols: symbols,
-        tuples: tuples,
-        where: where,
-        relation_number: relation_number}
+    relation = %{vars: vars, tuples: tuples, where: where, relation_number: relation_number}
 
     relations = [relation | relations]
 
@@ -84,9 +85,10 @@ defmodule Elog.Query do
       :no_join ->
         Logger.debug("no join, continue as normal")
         to_relations(Map.put(q, :where, wheres), relations, db, relation_number + 1)
+
       join_info ->
         Logger.debug("join detected")
-        new_relations = join(join_info, relations, db, relation_number + 1)
+        new_relations = join(join_info, relations, where, db, relation_number + 1)
         to_relations(Map.put(q, :where, wheres), new_relations, db, relation_number + 1)
     end
   end
@@ -167,66 +169,61 @@ defmodule Elog.Query do
   def find_joins(relations) do
     relations_graphs = relations_graph(relations)
     [rel | rels] = relations
-    %{symbols: symbols} = rel
+    %{vars: vars} = rel
 
     join_vars =
-      Enum.filter(symbols, fn {{:var, var}, field} ->
+      Enum.filter(vars, fn {:var, var} ->
         DG.in_degree(relations_graphs, var) > 1
       end)
 
-
     variable_node_sets =
-      Enum.reduce(join_vars, %{}, fn {{:var, var}, field}, acc ->
+      Enum.reduce(join_vars, %{}, fn {:var, var}, acc ->
         Map.put(acc, var, DG.predecessors(relations_graphs, var))
       end)
-
 
     if Enum.empty?(variable_node_sets) do
       :no_join
     else
       sets = Map.values(variable_node_sets)
-      union =
-        Enum.reduce(sets, fn val, acc -> MapSet.union(val, acc) end)
+      union = Enum.reduce(sets, fn val, acc -> MapSet.union(val, acc) end)
 
-
-      intersection =
-        Enum.reduce(sets, fn val, acc -> MapSet.intersection(val, acc) end)
-
+      intersection = Enum.reduce(sets, fn val, acc -> MapSet.intersection(val, acc) end)
 
       diff = MapSet.difference(union, intersection)
 
-
       if diff == MapSet.new() do
-        %{left: Enum.take(union, 1) |> MapSet.new(),
+        %{
+          left: Enum.take(union, 1) |> MapSet.new(),
           right: union |> Enum.drop(1) |> Enum.take(1) |> MapSet.new(),
-          join_vars: join_vars}
+          join_vars: join_vars
+        }
       else
-        %{left: intersection,
-          right: diff,
-          join_vars: join_vars}
+        %{left: intersection, right: diff, join_vars: join_vars}
       end
     end
   end
 
   def relations_graph(relations) do
-    Enum.reduce(relations, %{}, fn %{symbols: symbols, relation_number: relation_number} = rel, acc ->
+    Enum.reduce(relations, %{}, fn %{vars: vars, relation_number: relation_number} = rel,
+                                   acc ->
       s =
-        symbols
-        |> Enum.map(fn {{:var, var}, field} ->
-        var
-      end)
-      |> MapSet.new()
+        vars
+        |> Enum.map(fn {:var, var} ->
+          var
+        end)
+        |> MapSet.new()
 
-        Map.put(acc, relation_number, s)
+      Map.put(acc, relation_number, s)
     end)
   end
 
   def join(
-    %{left: left, right: right, join_vars: join_vars} = join_info,
-    relations,
-    db,
-    relation_number
-  ) do
+        %{left: left, right: right, join_vars: join_vars} = join_info,
+        relations,
+        where,
+        db,
+        relation_number
+      ) do
     xpro_relations =
       if Enum.count(right) > 1 do
         relations
@@ -239,46 +236,41 @@ defmodule Elog.Query do
 
     products = cartesian_product(xpro_relations)
 
-    [%{symbols: left_symbols}, %{symbols: right_symbols}] =
-      xpro_relations
+    [%{vars: left_vars}, %{vars: right_vars}] = xpro_relations
 
-    xpro = %{xpro_relations: xpro_relations,
-             left_symbols: left_symbols,
-             right_symbols: right_symbols}
+    xpro = %{
+      xpro_relations: xpro_relations,
+      left_vars: left_vars,
+      right_vars: right_vars
+    }
 
     jvs =
-      join_vars
-      |> Enum.map(fn {{:var, var} = jv, _} ->
-        jv
-      end)
-      |> MapSet.new()
+      join_vars |> MapSet.new()
 
     left_var =
-      left_symbols
-      |> Enum.filter(fn {{:var, var} = jv, _} ->
+      left_vars
+      |> Enum.filter(fn {:var, var} = jv ->
         MapSet.member?(jvs, jv)
       end)
-      |> List.first
+      |> List.first()
 
     right_var =
-      right_symbols
-      |> Enum.filter(fn {{:var, var} = jv, _} ->
+      right_vars
+      |> Enum.filter(fn {:var, var} = jv ->
         MapSet.member?(jvs, jv)
       end)
-      |> List.first
+      |> List.first()
 
-    compound_join_key =
-      fn {left_rel, right_rel} ->
-        {{:var, lvar}, left_field} = left_var
-        {{:var, rvar}, right_field} = right_var
+    compound_join_key = fn {left_rel, right_rel} ->
+      {:var, lvar} = left_var
+      {:var, rvar} = right_var
 
-        if Enum.count(right) >= 1 do
-          %{lvar => Map.fetch!(left_rel, lvar),
-            rvar => Map.fetch!(right_rel, rvar)}
-        else
-          %{lvar => Map.fetch!(left_rel, lvar)}
-        end
+      if Enum.count(right) >= 1 do
+        %{lvar => Map.fetch!(left_rel, lvar), rvar => Map.fetch!(right_rel, rvar)}
+      else
+        %{lvar => Map.fetch!(left_rel, lvar)}
       end
+    end
 
     left_relation_number =
       left
@@ -292,23 +284,23 @@ defmodule Elog.Query do
       end)
       |> List.first()
 
-    left_join_key =
-      fn t ->
-        syms =
-          if Enum.count(right) > 1 do
-            left_relation[:symbols]
-          else
-            join_vars
-          end
+    left_join_key = fn t ->
+      syms =
+        if Enum.count(right) > 1 do
+          left_relation[:vars]
+        else
+          join_vars
+        end
 
-        Enum.reduce(syms, %{}, fn {{:var, var}, field}, acc ->
-          Map.put(acc, var, Map.fetch!(t, var))
-        end)
-      end
+      Enum.reduce(syms, %{}, fn {:var, var}, acc ->
+        Map.put(acc, var, Map.fetch!(t, var))
+      end)
+    end
 
-    combined_symbols = Map.merge(left_symbols, right_symbols)
+    combined_vars = MapSet.union(left_vars, right_vars)
+      # Map.merge(left_vars, right_vars)
 
-    joined_tuples =
+    new_tuples =
       Elog.Db.hash_join({left_relation[:tuples], left_join_key}, {products, compound_join_key})
       |> Enum.map(fn {{prod_l, prod_r}, r} ->
         Enum.reduce([prod_l, prod_r, r], %{}, fn rel, acc ->
@@ -317,24 +309,34 @@ defmodule Elog.Query do
       end)
       |> MapSet.new()
 
+    new_vars =
+      new_tuples
+      |> Enum.take(1)
+      |> Enum.flat_map(&Map.keys/1)
+      |> Enum.flat_map(fn var -> [{:var, var}] end)
 
-     joined_tuples
+    IO.inspect(new_vars, label: "new vars")
+
+    new_relation =
+      %{vars: new_vars,
+        tuples: new_tuples,
+        where: where,
+        relation_number: relation_number}
 
     # TODO:
     # needs to return an actual new relation,
-    # including a new symbol set
+    # including a new var set
     # and a new tuple set
   end
 
   def cartesian_product([
-        %{symbols: syms1, tuples: rel_tuples1},
-        %{symbols: syms2, tuples: rel_tuples2}
+        %{tuples: rel_tuples1},
+        %{tuples: rel_tuples2}
       ]) do
     for tuple1 <- rel_tuples1,
         tuple2 <- rel_tuples2,
-        tuple1 != tuple2
-      do
-        {tuple1, tuple2}
+        tuple1 != tuple2 do
+      {tuple1, tuple2}
     end
   end
 
@@ -344,6 +346,6 @@ defmodule Elog.Query do
     {:var, String.to_atom(s)}
   end
 
-  defp var?({:var, _var}), do: true
-  defp var?(_), do: false
+  def var?({:var, _var}), do: true
+  def var?(_), do: false
 end
