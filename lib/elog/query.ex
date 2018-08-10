@@ -4,90 +4,62 @@ defmodule Elog.Query do
   # squeel
 
   require MapSet
-  require Strand.Protocol.Graph, as: Graph
+  # require Strand.Protocol.Graph, as: Graph
   require Strand.Protocol.Digraph, as: DG
-  require Strand.Impl.Digraph, as: Digraph
+  # require Strand.Impl.Digraph, as: Digraph
   require Logger
+  alias Elog.Db.Index
 
-  @doc """
-      iex> import Elog.Query
-      iex> query = %{find: [~q(name), ~q(friend_name)], where: [[~q(e), :name, ~q(name)], [~q(e2), :name, ~q(friend_name)], [~q(e), :friend, ~q(e2)]]}
-      iex> db = [%Elog.Datom{e: 1, a: :name, v: "Bill", t: 18141}, %Elog.Datom{e: 2, a: :name, v: "Sandy", t: 22222}, %Elog.Datom{e: 2, a: :friend, v: 1, t: 22222}, %Elog.Datom{e: 3, a: :name, v: "Jim should not appear", t: 33333}]
-      iex> query(db, query)
-      #MapSet<[%{e: 2, e2: 1, name: "Sandy", name2: "Bill"}]>
-  """
-  def query(db, q) do
-    relations =
-      q
-      |> validate()
-      |> to_relations(db)
-      |> extract_finds(q[:find])
-  end
 
-  def validate(%{find: find, where: where} = q)
-      when is_map(q) and is_list(find) and is_list(where) do
+  def validate(%{find: find, where: where} = q) when is_map(q) and is_list(find) and is_list(where) do
     q
   end
 
-  def extract_finds(tuples, find) do
-    Enum.map(tuples, fn tuple ->
+  def extract_finds(%{tuples: _tuples, vars: vars} = rel, [:*]) do
+    extract_finds(rel, vars)
+  end
+  def extract_finds(%{tuples: tuples}, find) do
+    tuples
+    |> Enum.map(fn tuple ->
       Enum.reduce(find, %{}, fn {:var, var}, acc ->
         Map.put(acc, var, Map.fetch!(tuple, var))
       end)
     end)
+    |> MapSet.new()
   end
 
-  @doc """
-      iex> import Elog.Query
-      iex> query = %{where: [[~q(e), :name, ~q(name)], [~q(e2), :name, ~q(name2)], [~q(e), :friend, ~q(e2)]], find: []}
-      iex> db = [%Elog.Datom{e: 1, a: :name, v: "Bill", t: 18141}, %Elog.Datom{e: 2, a: :name, v: "Sandy", t: 22222}, %Elog.Datom{e: 2, a: :friend, v: 1, t: 22222}, %Elog.Datom{e: 3, a: :name, v: "Jim should not appear", t: 33333}]
-      iex> to_relations(query, db)
-      #MapSet<[%{e: 2, e2: 1, name: "Sandy", name2: "Bill"}]>
-
-      iex> import Elog.Query
-      iex> query = %{where: [[~q(e), :name, ~q(name)], [~q(e2), :name, ~q(friendname)], [~q(e), :friend, ~q(e2)]], find: []}
-      iex> db = [%Elog.Datom{e: 1, a: :name, v: "Bill", t: 18141}, %Elog.Datom{e: 2, a: :name, v: "Sandy", t: 22222}, %Elog.Datom{e: 2, a: :friend, v: 1, t: 22222}, %Elog.Datom{e: 3, a: :name, v: "Jim should not appear", t: 33333}, %Elog.Datom{e: 4, a: :name, v: "Susy", t: 44444}, %Elog.Datom{e: 4, a: :friend, v: 2, t: 44444}]
-      iex> to_relations(query, db)
-      #MapSet<[%{e: 2, e2: 1, friendname: "Bill", name: "Sandy"}, %{e: 4, e2: 2, friendname: "Sandy", name: "Susy"}]>
-
-      iex> import Elog.Query
-      iex> query = %{where: [[~q(e), :name, ~q(name)], [~q(e2), :name, ~q(name)]], find: []}
-      iex> db = [%Elog.Datom{e: 1, a: :name, v: "Bill", t: 18141}, %Elog.Datom{e: 1, a: :eye_color, v: :blue, t: 18141}, %Elog.Datom{e: 2, a: :name, v: "Bill", t: 22222}]
-      iex> to_relations(query, db)
-      #MapSet<[%{e: 1, e2: 1, name: "Bill"}, %{e: 1, e2: 2, name: "Bill"}, %{e: 2, e2: 1, name: "Bill"}, %{e: 2, e2: 2, name: "Bill"}]>
-
-  """
-  def to_relations(%{find: find, where: wheres} = q, db) do
+  def to_relations(%{find: _find, where: _wheres} = q, db) do
     to_relations(q, [], db, 0)
   end
 
-  def to_relations(%{find: find, where: []}, relations, _db, _relcounter) do
+  def to_relations(%{find: _find, where: []}, [relation | relations], _db, _relcounter) when is_list(relations) do
+    relation
+  end
+
+  def to_relations(%{find: _find, where: []}, relations, _db, _relcounter) do
     relations
   end
 
-  def to_relations(%{find: find, where: [where | wheres]} = q, relations, db, relation_number) do
-    Logger.debug("building relation #{relation_number}")
+  def to_relations(%{find: _find, where: [where | wheres]} = q, relations, db, relation_number) do
     symbols = compute_symbols(where)
     vars =
       symbols
-      |> Enum.map(fn {{:var, var} = v, _} -> v end)
+      |> Enum.map(fn {{:var, _var} = v, _} -> v end)
       |> MapSet.new()
 
     tuples =
       filter_tuples(where, db)
       |> datoms_to_tuples(symbols)
 
-    relation = %{vars: vars, tuples: tuples, where: where, relation_number: relation_number}
+    relation = %{vars: vars, tuples: tuples, where: where, relation_number: relation_number + 1}
 
     relations = [relation | relations]
 
     case find_joins(relations) do
       :no_join ->
-        Logger.debug("no join, continue as normal")
         to_relations(Map.put(q, :where, wheres), relations, db, relation_number + 1)
 
       join_info ->
-        Logger.debug("join detected")
         new_relations = join(join_info, relations, where, db, relation_number + 1)
         to_relations(Map.put(q, :where, wheres), new_relations, db, relation_number + 1)
     end
@@ -104,35 +76,46 @@ defmodule Elog.Query do
   def compute_symbols(where) do
     where
     |> Enum.zip(@datom_schema_eavt)
-    |> Enum.filter(fn {k, v} -> var?(k) end)
+    |> Enum.filter(fn {k, _v} -> var?(k) end)
     |> Enum.into(%{})
   end
 
-  @doc """
-      iex> import Elog.Query
-      iex> where = [~q(e), :name, ~q(name)]
-      iex> db = [%Elog.Datom{e: 1, a: :name, v: "Bill", t: 18141}, %Elog.Datom{e: 2, a: :name, v: "Sandy", t: 22222}]
-      iex> filter_tuples(where, db)
-      [%Elog.Datom{e: 1, a: :name, v: "Bill", t: 18141}, %Elog.Datom{e: 2, a: :name, v: "Sandy", t: 22222}]
-
-      iex> import Elog.Query
-      iex> where = [~q(e), :name, "Marsha"]
-      iex> db = [%Elog.Datom{e: 1, a: :name, v: "Bill", t: 18141}]
-      iex> filter_tuples(where, db)
-      []
-
-      iex> import Elog.Query
-      iex> where = [~q(e), :name, "Marsha"]
-      iex> db = [%Elog.Datom{e: 1, a: :name, v: "Marsha", t: 18141}]
-      iex> filter_tuples(where, db)
-      [%Elog.Datom{e: 1, a: :name, v: "Marsha", t: 18141}]
-
-      iex> import Elog.Query
-      iex> where = [~q(e), :age, 23]
-      iex> db = [%Elog.Datom{e: 1, a: :name, v: "Marsha", t: 18141}]
-      iex> filter_tuples(where, db)
-      []
-  """
+  # [e: var, a: var, v: var]
+  def filter_tuples([{:var, _evar} = _e, {:var, _avar} = _a, {:var, _vvar} = _v], _db) do
+    raise "not implemented"
+  end
+  # [e: var, a: var, v: literal]
+  def filter_tuples([{:var, _evar} = _e, {:var, _avar} = _a, _v], _db) do
+    raise "not implemented"
+  end
+  # [e: var, a: literal, v: var]
+  def filter_tuples([{:var, _evar} = _e, a, {:var, _vvar} = _v], db) do
+    indexes = db.indexes
+    aevt = indexes[:aevt]
+    Index.get(aevt, a)
+  end
+  # [e: literal, a: var, v: var]
+  def filter_tuples([_e, {:var, _avar} = _a, {:var, _vvar} = _v], _db) do
+    raise "not implemented"
+  end
+  # [e: var, a: literal, v: literal]
+  def filter_tuples([{:var, _evar} = _e, a, v], db) do
+    aevt = db.indexes[:aevt]
+    aevt
+    |> Index.get(a)
+    |> Enum.filter(fn tuple ->
+      tuple.v == v
+    end)
+  end
+  # [e: literal, a: var, v: literal]
+  def filter_tuples([_e, {:var, _avar} = _a, _v], _db) do
+    raise "not implemented"
+  end
+  # [e: literal, a: literal, v: var]
+  def filter_tuples([_e, _a, {:var, _vvar} = _v], _db) do
+    raise "not implemented"
+  end
+  # [e: literal, a: literal, v: literal]
   def filter_tuples([e, a, v], db) do
     db
     |> Enum.filter(fn tuple ->
@@ -155,10 +138,10 @@ defmodule Elog.Query do
   def var_match?({:var, _} = _term, _lookup, _tuple), do: true
   def var_match?(_term, _lookup, _tuple), do: false
 
-  def literal_match?(literal, given_attribute, tuple) do
+  def literal_match?(literal, field, tuple) do
     tuple_attribute = Map.fetch!(tuple, :a)
 
-    if tuple_attribute == given_attribute do
+    if tuple_attribute == field do
       tuple_value = Map.fetch!(tuple, :v)
       tuple_value == literal
     else
@@ -168,7 +151,7 @@ defmodule Elog.Query do
 
   def find_joins(relations) do
     relations_graphs = relations_graph(relations)
-    [rel | rels] = relations
+    [rel | _rels] = relations
     %{vars: vars} = rel
 
     join_vars =
@@ -204,7 +187,7 @@ defmodule Elog.Query do
   end
 
   def relations_graph(relations) do
-    Enum.reduce(relations, %{}, fn %{vars: vars, relation_number: relation_number} = rel,
+    Enum.reduce(relations, %{}, fn %{vars: vars, relation_number: relation_number},
                                    acc ->
       s =
         vars
@@ -218,10 +201,10 @@ defmodule Elog.Query do
   end
 
   def join(
-        %{left: left, right: right, join_vars: join_vars} = join_info,
+        %{left: left, right: right, join_vars: join_vars} = _join_info,
         relations,
         where,
-        db,
+        _db,
         relation_number
       ) do
     xpro_relations =
@@ -238,25 +221,19 @@ defmodule Elog.Query do
 
     [%{vars: left_vars}, %{vars: right_vars}] = xpro_relations
 
-    xpro = %{
-      xpro_relations: xpro_relations,
-      left_vars: left_vars,
-      right_vars: right_vars
-    }
-
     jvs =
       join_vars |> MapSet.new()
 
     left_var =
       left_vars
-      |> Enum.filter(fn {:var, var} = jv ->
+      |> Enum.filter(fn {:var, _var} = jv ->
         MapSet.member?(jvs, jv)
       end)
       |> List.first()
 
     right_var =
       right_vars
-      |> Enum.filter(fn {:var, var} = jv ->
+      |> Enum.filter(fn {:var, _var} = jv ->
         MapSet.member?(jvs, jv)
       end)
       |> List.first()
@@ -266,7 +243,10 @@ defmodule Elog.Query do
       {:var, rvar} = right_var
 
       if Enum.count(right) >= 1 do
-        %{lvar => Map.fetch!(left_rel, lvar), rvar => Map.fetch!(right_rel, rvar)}
+        %{
+          rvar => Map.fetch!(right_rel, rvar),
+          lvar => Map.fetch!(left_rel, lvar)
+        }
       else
         %{lvar => Map.fetch!(left_rel, lvar)}
       end
@@ -274,6 +254,11 @@ defmodule Elog.Query do
 
     left_relation_number =
       left
+      |> Enum.to_list()
+      |> List.first()
+
+    right_relation_number =
+      right
       |> Enum.to_list()
       |> List.first()
 
@@ -297,15 +282,20 @@ defmodule Elog.Query do
       end)
     end
 
-    combined_vars = MapSet.union(left_vars, right_vars)
-      # Map.merge(left_vars, right_vars)
+    # used?
+    # combined_vars = MapSet.union(left_vars, right_vars)
 
     new_tuples =
       Elog.Db.hash_join({left_relation[:tuples], left_join_key}, {products, compound_join_key})
-      |> Enum.map(fn {{prod_l, prod_r}, r} ->
-        Enum.reduce([prod_l, prod_r, r], %{}, fn rel, acc ->
-          Map.merge(rel, acc)
-        end)
+      |> Enum.map(fn
+        {{prod_l, prod_r}, r} = y ->
+          Enum.reduce([prod_l, prod_r, r], %{}, fn rel, acc ->
+            Map.merge(rel, acc)
+          end)
+        {r, {prod_l, prod_r}} ->
+          Enum.reduce([prod_l, prod_r, r], %{}, fn rel, acc ->
+            Map.merge(rel, acc)
+          end)
       end)
       |> MapSet.new()
 
@@ -315,13 +305,17 @@ defmodule Elog.Query do
       |> Enum.flat_map(&Map.keys/1)
       |> Enum.flat_map(fn var -> [{:var, var}] end)
 
-    IO.inspect(new_vars, label: "new vars")
 
-    new_relation =
-      %{vars: new_vars,
-        tuples: new_tuples,
-        where: where,
-        relation_number: relation_number}
+
+    filtered =
+      Enum.reject(relations, fn %{relation_number: relation_number} ->
+        relation_number == left_relation_number || relation_number == right_relation_number
+      end)
+
+    [%{vars: new_vars,
+       tuples: new_tuples,
+       where: where,
+       relation_number: relation_number} | filtered]
 
     # TODO:
     # needs to return an actual new relation,
