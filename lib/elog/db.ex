@@ -6,13 +6,13 @@ defmodule Elog.Db do
   defstruct active_indexes: MapSet.new(), indexes: %{}, current_entity_id: 1
 
   @doc """
-      iex> import Elog.Db
+      iex> import Elog.{Db, Syntax}
       iex> data = [%{name: "Bill", eye_color: "blue"}, %{name: "Suzy", eye_color: "brown", shoe_size: 6}]
       iex> new(data)
       #Elog.Db<[entities: 2, active_indexes: [:eavt, :aevt]]>
-
   """
   def new(maps, options \\ %{indexes: [:eavt, :aevt]})
+
   def new(maps, %{indexes: indexes} = _options) when is_list(maps) do
     transaction_id = :erlang.monotonic_time()
     entity_ids = Stream.iterate(1, &(&1 + 1))
@@ -28,75 +28,24 @@ defmodule Elog.Db do
     # here we are.
     current_entity_id =
       idx[:eavt].data
-      |> Map.keys
+      |> Map.keys()
       |> Enum.max()
 
-    %__MODULE__{active_indexes: indexes, indexes: idx, current_entity_id: current_entity_id}
+    %__MODULE__{
+      active_indexes: indexes,
+      indexes: idx,
+      current_entity_id: current_entity_id
+    }
   end
 
   @doc """
       iex> alias Elog.Db
-      iex> import Elog.Query
+      iex> import Elog.Syntax
       iex> query = %{where: [[~q(e), :name, ~q(name)], [~q(e2), :name, ~q(friendname)], [~q(e), :friend, ~q(e2)]], find: [~q(name), ~q(friendname)]}
       iex> db = Db.new([%{name: "Bill"}, %{name: "Sandy", friend: 1}, %{name: "Jim should not appear"}, %{name: "Susy", friend: 2}])
       iex> Db.query(db, query)
       #MapSet<[%{friendname: "Bill", name: "Sandy"}, %{friendname: "Sandy", name: "Susy"}]>
 
-      iex> import Elog.Query
-      iex> alias Elog.Db
-      iex> query = %{find: [~q(e)], where: [[~q(e), :age, 23]]}
-      iex> db = Db.new([%{name: "Marsha"}])
-      iex> Db.query(db, query)
-      #MapSet<[]>
-
-      iex> import Elog.Query
-      iex> alias Elog.Db
-      iex> query = %{find: [~q(e)], where: [[~q(e), :name, "Marsha"]]}
-      iex> db = Db.new([%{name: "Bill"}])
-      iex> Db.query(db, query)
-      #MapSet<[]>
-
-      iex> import Elog.Query
-      iex> alias Elog.Db
-      iex> query = %{find: [~q(e), ~q(name)], where: [[~q(e), :name, ~q(name)]]}
-      iex> db = Db.new([%{name: "Bill"}, %{name: "Sandy"}])
-      iex> Db.query(db, query)
-      #MapSet<[%{e: 1, name: "Bill"}, %{e: 2, name: "Sandy"}]>
-
-      iex> import Elog.Query
-      iex> alias Elog.Db
-      iex> query = %{find: [~q(e), ~q(e2), ~q(name), ~q(name2)], where: [[~q(e), :name, ~q(name)], [~q(e2), :name, ~q(name2)], [~q(e), :friend, ~q(e2)]]}
-      iex> db = Db.new([%{name: "Bill"}, %{name: "Sandy", friend: 1}, %{name: "Jim should not appear"}])
-      iex> Db.query(db, query)
-      #MapSet<[%{e: 2, e2: 1, name: "Sandy", name2: "Bill"}]>
-
-      iex> import Elog.Query
-      iex> alias Elog.Db
-      iex> query = %{find: [~q(e), ~q(e2), ~q(name)], where: [[~q(e), :name, ~q(name)], [~q(e2), :name, ~q(name)]]}
-      iex> db = Db.new([%{name: "Bill", eye_color: "blue"}, %{name: "Bill"}])
-      iex> Db.query(db, query)
-      #MapSet<[%{e: 1, e2: 1, name: "Bill"}, %{e: 1, e2: 2, name: "Bill"}, %{e: 2, e2: 1, name: "Bill"}, %{e: 2, e2: 2, name: "Bill"}]>
-
-      iex> import Elog.Query
-      iex> alias Elog.Db
-      iex> query = %{find: [~q(e)], where: [[~q(e), :name, "Marsha"]]}
-      iex> db = Db.new([%{name: "Marsha"}])
-      iex> Db.query(db, query)
-      #MapSet<[%{e: 1}]>
-
-      iex> import Elog.Query
-      iex> alias Elog.Db
-      iex> query = %{find: [~q(e), ~q(name)], where: [[~q(e), :name, "Marsha"], [~q(e), :name, ~q(name)]]}
-      iex> db = Db.new([%{name: "Marsha"}, %{name: "Bill should not appear"}])
-      iex> Db.query(db, query)
-      #MapSet<[%{e: 1, name: "Marsha"}]>
-
-      iex> import Elog.Query
-      iex> alias Elog.Db
-      iex> query = %{find: [~q(e), ~q(name), ~q(eye_color)], where: [[~q(e), :name, "Marsha"], [~q(e), :eye_color, "Blue"], [~q(e), :eye_color, ~q(eye_color)], [~q(e), :name, ~q(name)]]}
-      iex> db = Db.new([%{name: "Marsha", eye_color: "Blue"}, %{name: "Marsha", eye_color: "red should not be here"}, %{name: "Bill should not appear"}])
-      iex> Db.query(db, query)
-      #MapSet<[%{e: 1, eye_color: "Blue", name: "Marsha"}]>
   """
   def query(db, q) do
     q
@@ -123,16 +72,19 @@ defmodule Elog.Db do
     def get(this, entity_id) do
       get(this, entity_id, [])
     end
+
     def get(this, entity_id, default) do
       Map.get(this.data, entity_id, default)
     end
 
     def insert(this, datom) do
       e = datom.e
+
       {_, new_data} =
         Map.get_and_update(this.data, e, fn
           nil ->
             {nil, [datom]}
+
           old ->
             {nil, [datom | old]}
         end)
@@ -145,16 +97,19 @@ defmodule Elog.Db do
     def get(this, entity_id) do
       get(this, entity_id, [])
     end
+
     def get(this, attribute_name, default) do
       Map.get(this.data, attribute_name, default)
     end
 
     def insert(this, datom) do
       a = datom.a
+
       {_, new_data} =
         Map.get_and_update(this.data, a, fn
           nil ->
             {nil, [datom]}
+
           old ->
             {nil, [datom | old]}
         end)
@@ -165,8 +120,8 @@ defmodule Elog.Db do
 
   def initialize_index(:eavt), do: %EAVT{}
   def initialize_index(:aevt), do: %AEVT{}
-  def initialize_bytes(:avet), do: raise "AVET indexes are not implemented"
-  def initialize_bytes(:vaet), do: raise "VAET indexes are not implemented"
+  def initialize_bytes(:avet), do: raise("AVET indexes are not implemented")
+  def initialize_bytes(:vaet), do: raise("VAET indexes are not implemented")
 
   defp create_indexes(datoms, indexes) do
     initial_indexes =
@@ -175,7 +130,8 @@ defmodule Elog.Db do
       end)
 
     Enum.reduce(datoms, initial_indexes, fn datom, outer_acc ->
-      Enum.reduce(initial_indexes, outer_acc, fn {index_kind, _index}, inner_acc ->
+      Enum.reduce(initial_indexes, outer_acc, fn {index_kind, _index},
+                                                 inner_acc ->
         new_index =
           inner_acc
           |> Map.fetch!(index_kind)
@@ -192,7 +148,8 @@ defmodule Elog.Db do
     end)
   end
 
-  def hash_join({r1_tuples, r1_f} = rel1, {r2_tuples, r2_f} = rel2) when is_function(r1_f) and is_function(r2_f) do
+  def hash_join({r1_tuples, r1_f} = rel1, {r2_tuples, r2_f} = rel2)
+      when is_function(r1_f) and is_function(r2_f) do
     {{l_tuples, lf} = _larger_relation, {s_tuples, sf} = _smaller_relation} =
       if Enum.count(r1_tuples) >= Enum.count(r2_tuples) do
         {rel1, rel2}
@@ -226,7 +183,6 @@ defmodule Elog.Db do
             {row, match_row}
           end
 
-
         join ++ acc
       else
         acc
@@ -244,10 +200,11 @@ defimpl Inspect, for: Elog.Db do
     indexes = db.indexes
     eavt = indexes[:eavt]
     eavt_data = eavt.data
+
     entities_count =
       eavt_data
       |> Map.keys()
-      |> Enum.count
+      |> Enum.count()
 
     active_indexes =
       db.active_indexes

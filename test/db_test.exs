@@ -1,4 +1,111 @@
 defmodule ElogDbTest do
   use ExUnit.Case
   doctest Elog.Db
+  alias Elog.Db
+  import Elog.Syntax
+
+  test "literal no attribute" do
+    query = %{find: [~q(e)], where: [[~q(e), :age, 23]]}
+    db = Db.new([%{name: "Marsha"}])
+    result = Db.query(db, query)
+    assert result == MapSet.new([])
+  end
+
+  test "literal no value" do
+    query = %{find: [~q(e)], where: [[~q(e), :name, "Marsha"]]}
+    db = Db.new([%{name: "Bill"}])
+    result = Db.query(db, query)
+
+    assert result == MapSet.new([])
+  end
+
+  test "find all vars" do
+    query = %{find: [~q(e), ~q(name)], where: [[~q(e), :name, ~q(name)]]}
+    db = Db.new([%{name: "Bill"}, %{name: "Sandy"}])
+    result = Db.query(db, query)
+
+    assert result == MapSet.new([%{e: 1, name: "Bill"}, %{e: 2, name: "Sandy"}])
+  end
+
+  test "double join" do
+    query = %{
+      find: [~q(e), ~q(e2), ~q(name), ~q(name2)],
+      where: [
+        [~q(e), :name, ~q(name)],
+        [~q(e2), :name, ~q(name2)],
+        [~q(e), :friend, ~q(e2)]
+      ]
+    }
+
+    db =
+      Db.new([
+        %{name: "Bill"},
+        %{name: "Sandy", friend: 1},
+        %{name: "Jim should not appear"}
+      ])
+
+    result = Db.query(db, query)
+
+    assert result == MapSet.new([%{e: 2, e2: 1, name: "Sandy", name2: "Bill"}])
+  end
+
+  test "direct join" do
+    query = %{
+      find: [~q(e), ~q(e2), ~q(name)],
+      where: [[~q(e), :name, ~q(name)], [~q(e2), :name, ~q(name)]]
+    }
+
+    db = Db.new([%{name: "Bill", eye_color: "blue"}, %{name: "Bill"}])
+    result = Db.query(db, query)
+
+    assert result ==
+             MapSet.new([
+               %{e: 1, e2: 1, name: "Bill"},
+               %{e: 1, e2: 2, name: "Bill"},
+               %{e: 2, e2: 1, name: "Bill"},
+               %{e: 2, e2: 2, name: "Bill"}
+             ])
+  end
+
+  test "literal value match" do
+    query = %{find: [~q(e)], where: [[~q(e), :name, "Marsha"]]}
+    db = Db.new([%{name: "Marsha"}])
+    result = Db.query(db, query)
+    assert result == MapSet.new([%{e: 1}])
+  end
+
+  test "literal with var" do
+    query = %{
+      find: [~q(e), ~q(name)],
+      where: [[~q(e), :name, "Marsha"], [~q(e), :name, ~q(name)]]
+    }
+
+    db = Db.new([%{name: "Marsha"}, %{name: "Bill should not appear"}])
+    result = Db.query(db, query)
+
+    assert result == MapSet.new([%{e: 1, name: "Marsha"}])
+  end
+
+  test "two literals with vars" do
+    query = %{
+      find: [~q(e), ~q(name), ~q(eye_color)],
+      where: [
+        [~q(e), :name, "Marsha"],
+        [~q(e), :eye_color, "Blue"],
+        [~q(e), :eye_color, ~q(eye_color)],
+        [~q(e), :name, ~q(name)]
+      ]
+    }
+
+    db =
+      Db.new([
+        %{name: "Marsha", eye_color: "Blue"},
+        %{name: "Marsha", eye_color: "red should not be here"},
+        %{name: "Bill should not appear"}
+      ])
+
+    result = Db.query(db, query)
+
+    assert result == MapSet.new([%{e: 1, eye_color: "Blue", name: "Marsha"}])
+  end
 end
