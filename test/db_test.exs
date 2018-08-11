@@ -117,7 +117,12 @@ defmodule ElogDbTest do
     test "it adds bare data" do
       db = Db.new()
       db = Db.transact(db, [%{name: "Bill"}])
-      result = Db.query(db, %{find: [~q(e), ~q(name)], where: [[~q(e), :name, ~q(name)]]})
+
+      result =
+        Db.query(db, %{
+          find: [~q(e), ~q(name)],
+          where: [[~q(e), :name, ~q(name)]]
+        })
 
       assert db.current_entity_id == 2
       assert result == MapSet.new([%{e: 1, name: "Bill"}])
@@ -127,7 +132,12 @@ defmodule ElogDbTest do
       db = Db.new()
       db = Db.transact(db, [%{"elog/id": 1, name: "Bill"}])
       db = Db.transact(db, [%{"elog/id": 1, name: "Jamie"}])
-      result = Db.query(db, %{find: [~q(e), ~q(name)], where: [[~q(e), :name, ~q(name)]]})
+
+      result =
+        Db.query(db, %{
+          find: [~q(e), ~q(name)],
+          where: [[~q(e), :name, ~q(name)]]
+        })
 
       assert db.current_entity_id == 3
       assert result == MapSet.new([%{e: 1, name: "Jamie"}])
@@ -137,7 +147,12 @@ defmodule ElogDbTest do
       db = Db.new()
       db = Db.transact(db, [%{name: "Bill"}])
       db = Db.transact(db, [%{"elog/id": 1, name: "Jamie"}])
-      result = Db.query(db, %{find: [~q(e), ~q(name)], where: [[~q(e), :name, ~q(name)]]})
+
+      result =
+        Db.query(db, %{
+          find: [~q(e), ~q(name)],
+          where: [[~q(e), :name, ~q(name)]]
+        })
 
       assert db.current_entity_id == 3
       assert result == MapSet.new([%{e: 1, name: "Jamie"}])
