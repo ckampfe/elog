@@ -8,6 +8,8 @@ defmodule Elog.Query do
   require Logger
   alias Elog.Db.Index
 
+  @datom_schema_eavt [:e, :a, :v, :t]
+
   def validate(%{find: find, where: where} = q)
       when is_map(q) and is_list(find) and is_list(where) do
     q
@@ -93,8 +95,6 @@ defmodule Elog.Query do
     end
   end
 
-  @datom_schema_eavt [:e, :a, :v, :t]
-
   defp compute_symbols(where) do
     where
     |> Enum.zip(@datom_schema_eavt)
@@ -160,7 +160,7 @@ defmodule Elog.Query do
     end)
   end
 
-  def datoms_to_tuples(filtered_datoms, symbols) do
+  defp datoms_to_tuples(filtered_datoms, symbols) do
     Enum.map(filtered_datoms, fn datom ->
       Enum.reduce(symbols, %{}, fn {{:var, var}, field}, acc ->
         Map.put(acc, var, Map.fetch!(datom, field))
@@ -168,10 +168,10 @@ defmodule Elog.Query do
     end)
   end
 
-  def var_match?({:var, _} = _term, _lookup, _tuple), do: true
-  def var_match?(_term, _lookup, _tuple), do: false
+  defp var_match?({:var, _} = _term, _lookup, _tuple), do: true
+  defp var_match?(_term, _lookup, _tuple), do: false
 
-  def literal_match?(literal, field, tuple) do
+  defp literal_match?(literal, field, tuple) do
     tuple_attribute = Map.fetch!(tuple, :a)
 
     if tuple_attribute == field do
@@ -182,7 +182,7 @@ defmodule Elog.Query do
     end
   end
 
-  def find_joins(relations) do
+  defp find_joins(relations) do
     relations_graphs = relations_graph(relations)
     [rel | _rels] = relations
     %{vars: vars} = rel
@@ -220,7 +220,7 @@ defmodule Elog.Query do
     end
   end
 
-  def relations_graph(relations) do
+  defp relations_graph(relations) do
     Enum.reduce(relations, %{}, fn %{
                                      vars: vars,
                                      relation_number: relation_number
@@ -237,13 +237,13 @@ defmodule Elog.Query do
     end)
   end
 
-  def join(
-        %{left: left, right: right, join_vars: join_vars} = _join_info,
-        relations,
-        where,
-        _db,
-        relation_number
-      ) do
+  defp join(
+         %{left: left, right: right, join_vars: join_vars} = _join_info,
+         relations,
+         where,
+         _db,
+         relation_number
+       ) do
     xpro_relations =
       if Enum.count(right) > 1 do
         relations
@@ -357,17 +357,12 @@ defmodule Elog.Query do
       }
       | filtered
     ]
-
-    # TODO:
-    # needs to return an actual new relation,
-    # including a new var set
-    # and a new tuple set
   end
 
-  def cartesian_product([
-        %{tuples: rel_tuples1},
-        %{tuples: rel_tuples2}
-      ]) do
+  defp cartesian_product([
+         %{tuples: rel_tuples1},
+         %{tuples: rel_tuples2}
+       ]) do
     for tuple1 <- rel_tuples1,
         tuple2 <- rel_tuples2,
         tuple1 != tuple2 do
@@ -377,6 +372,6 @@ defmodule Elog.Query do
 
   ##########
 
-  def var?({:var, _var}), do: true
-  def var?(_), do: false
+  defp var?({:var, _var}), do: true
+  defp var?(_), do: false
 end
