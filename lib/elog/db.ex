@@ -8,7 +8,7 @@ defmodule Elog.Db do
   @doc """
       iex> alias Elog.Db
       iex> Db.new()
-      #Elog.Db<[entities: 0, active_indexes: [:eavt, :aevt]]>
+      #Elog.Db<[entities: 0, active_indexes: [:eavt, :aevt, :avet]]>
   """
   def new() do
     new([])
@@ -18,9 +18,9 @@ defmodule Elog.Db do
       iex> import Elog.{Db, Syntax}
       iex> data = [%{name: "Bill", eye_color: "blue"}, %{name: "Suzy", eye_color: "brown", shoe_size: 6}]
       iex> new(data)
-      #Elog.Db<[entities: 2, active_indexes: [:eavt, :aevt]]>
+      #Elog.Db<[entities: 2, active_indexes: [:eavt, :aevt, :avet]]>
   """
-  def new(maps, options \\ %{indexes: [:eavt, :aevt]})
+  def new(maps, options \\ %{indexes: [:eavt, :aevt, :avet]})
 
   def new(maps, %{indexes: indexes} = _options) when is_list(maps) do
     transaction_id = :erlang.monotonic_time()
@@ -83,6 +83,10 @@ defmodule Elog.Db do
   end
 
   defmodule AEVT do
+    defstruct data: %{}
+  end
+
+  defmodule AVET do
     defstruct data: %{}
   end
 
@@ -176,6 +180,51 @@ defmodule Elog.Db do
     end
   end
 
+  defimpl Index, for: AVET do
+    def get(this, av) do
+      get(this, av, [])
+    end
+
+    def get(this, av, default) do
+      Map.get(this.data, av, default)
+    end
+
+    def insert(this, datom) do
+      av = {datom.a, datom.v}
+
+      {_, new_data} =
+        Map.get_and_update(this.data, av, fn
+          nil ->
+            {nil, [datom]}
+
+          old ->
+            {nil, [datom | old]}
+        end)
+
+      %{this | data: new_data}
+    end
+
+    def put(this, datom) do
+      av = {datom.a, datom.v}
+
+      {_, new_data} =
+        Map.get_and_update(this.data, av, fn
+          nil ->
+            {nil, [datom]}
+
+          old ->
+            filtered_olds =
+              Enum.reject(old, fn %Elog.Datom{e: this_e} ->
+                datom.e == this_e
+              end)
+
+            {nil, filtered_olds}
+        end)
+
+      Index.insert(%{this | data: new_data}, datom)
+    end
+  end
+
   @doc """
       iex> import Elog.Syntax
       iex> alias Elog.Db
@@ -228,8 +277,8 @@ defmodule Elog.Db do
 
   def initialize_index(:eavt), do: %EAVT{}
   def initialize_index(:aevt), do: %AEVT{}
-  def initialize_bytes(:avet), do: raise("AVET indexes are not implemented")
-  def initialize_bytes(:vaet), do: raise("VAET indexes are not implemented")
+  def initialize_index(:avet), do: %AVET{}
+  def initialize_index(:vaet), do: raise("VAET indexes are not implemented")
 
   defp create_indexes(datoms, indexes) do
     initial_indexes =
@@ -256,46 +305,110 @@ defmodule Elog.Db do
     end)
   end
 
-  def hash_join({r1_tuples, r1_f} = rel1, {r2_tuples, r2_f} = rel2)
+  def hash_join(
+        {r1_tuples, r1_cardinality, r1_f} = rel1,
+        {r2_tuples, r2_cardinality, r2_f} = rel2
+      )
       when is_function(r1_f) and is_function(r2_f) do
-    {{l_tuples, lf} = _larger_relation, {s_tuples, sf} = _smaller_relation} =
-      if Enum.count(r1_tuples) >= Enum.count(r2_tuples) do
+    {{l_tuples, l_tuples_cardinality, lf} = _larger_relation,
+     {s_tuples, r_tuples_cardinality, sf} = _smaller_relation} =
+      if r1_cardinality >= r2_cardinality do
         {rel1, rel2}
       else
         {rel2, rel1}
       end
 
-    hashed_smaller =
-      Enum.reduce(s_tuples, %{}, fn row, acc ->
-        join_attr_value = sf.(row)
+    Logger.debug("larger tuples cardinality: #{l_tuples_cardinality}")
+    Logger.debug("smaller tuples cardinality: #{r_tuples_cardinality}")
 
-        {_, rows} =
-          Map.get_and_update(acc, join_attr_value, fn
-            nil ->
-              {nil, [row]}
+    {hs_micros, hashed_smaller} =
+      :timer.tc(fn ->
+        Enum.reduce(s_tuples, %{}, fn row, acc ->
+          join_attr_value = sf.(row)
 
-            existing ->
-              {nil, [row | existing]}
-          end)
+          {_, rows} =
+            Map.get_and_update(acc, join_attr_value, fn
+              nil ->
+                {nil, [row]}
 
-        rows
+              existing ->
+                {nil, [row | existing]}
+            end)
+
+          rows
+        end)
       end)
 
-    Enum.reduce(l_tuples, [], fn row, acc ->
-      join_val = lf.(row)
-      match_rows = Map.get(hashed_smaller, join_val)
+    Logger.debug(
+      "time to create hashed_smaller: #{hs_micros / 1000} milliseconds"
+    )
 
-      if match_rows do
-        join =
-          for match_row <- match_rows do
-            {row, match_row}
+    {join_micros, join} =
+      :timer.tc(fn ->
+        # parts = Enum.chunk_every(l_tuples, 1000)
+        # Enum.map(parts, fn part ->
+        #   Task.async(fn ->
+        #     Enum.flat_map(part, fn row ->
+        #       join_val = lf.(row)
+        #       match_rows = Map.get(hashed_smaller, join_val, [])
+        #       Enum.map(match_rows, fn mr -> {row, mr} end)
+        #     end)
+        #   end)
+        # end)
+        # |> Enum.flat_map(fn t -> Task.await(t) end)
+
+        # Enum.flat_map(l_tuples, fn row ->
+        #   join_val = lf.(row)
+        #   match_rows = Map.get(hashed_smaller, join_val, [])
+        #   Enum.map(match_rows, fn mr -> {row, mr} end)
+        # end)
+
+        Enum.reduce(l_tuples, [], fn row, acc ->
+          join_val = lf.(row)
+          match_rows = Map.get(hashed_smaller, join_val)
+
+          if match_rows do
+            Enum.reduce(match_rows, acc, fn v, acc2 ->
+              [{row, v} | acc2]
+            end)
+          else
+            acc
           end
+        end)
 
-        join ++ acc
-      else
-        acc
-      end
-    end)
+        # {:ok, agent} = Agent.start_link(fn -> 1 end)
+        # chunk_size = 1000
+        # l_tuples_chunks = Enum.chunk_every(l_tuples, chunk_size)
+        # Enum.map(l_tuples_chunks, fn chunk ->
+        #   Task.async(fn ->
+        #     Enum.reduce(chunk, [], fn row, acc ->
+        #       join_val = lf.(row)
+        #       match_rows = Map.get(hashed_smaller, join_val)
+
+        #       if match_rows do
+        #         join =
+        #         for match_row <- match_rows do
+        #           {row, match_row}
+        #         end
+
+        #         join ++ acc
+        #       else
+        #         acc
+        #       end
+        #     end) |> MapSet.new()
+        #   end)
+        # end)
+        # |> Enum.reduce(MapSet.new(), fn chunk, acc ->
+        #   r = Task.await(chunk, 10_000)
+        #   Agent.update(agent, fn old -> old + 1 end)
+        #   IO.puts("chunk done")
+        #   IO.puts(Agent.get(agent, fn s -> s end))
+        #   MapSet.union(r, acc)
+        # end)
+      end)
+
+    Logger.debug("time to do join: #{join_micros / 1000} milliseconds")
+    join
   end
 end
 

@@ -129,13 +129,8 @@ defmodule Elog.Query do
 
   # [e: var, a: literal, v: literal]
   defp filter_tuples([{:var, _evar} = _e, a, v], db) do
-    aevt = db.indexes[:aevt]
-
-    aevt
-    |> Index.get(a)
-    |> Enum.filter(fn tuple ->
-      tuple.v == v
-    end)
+    avet = db.indexes[:avet]
+    Index.get(avet, {a, v})
   end
 
   # [e: literal, a: var, v: literal]
@@ -254,7 +249,7 @@ defmodule Elog.Query do
         relations
       end
 
-    products = cartesian_product(xpro_relations)
+    {products, products_cardinality} = cartesian_product(xpro_relations)
 
     [%{vars: left_vars}, %{vars: right_vars}] = xpro_relations
 
@@ -274,19 +269,26 @@ defmodule Elog.Query do
       end)
       |> List.first()
 
-    compound_join_key = fn {left_rel, right_rel} ->
-      {:var, lvar} = left_var
-      {:var, rvar} = right_var
+    right_count = Enum.count(right)
 
-      if Enum.count(right) >= 1 do
-        %{
-          rvar => Map.fetch!(right_rel, rvar),
-          lvar => Map.fetch!(left_rel, lvar)
-        }
+    compound_join_key =
+      if right_count >= 1 do
+        fn {left_rel, right_rel} ->
+          {:var, lvar} = left_var
+          {:var, rvar} = right_var
+
+          %{
+            rvar => Map.fetch!(right_rel, rvar),
+            lvar => Map.fetch!(left_rel, lvar)
+          }
+        end
       else
-        %{lvar => Map.fetch!(left_rel, lvar)}
+        fn {left_rel, right_rel} ->
+          {:var, lvar} = left_var
+          {:var, rvar} = right_var
+          %{lvar => Map.fetch!(left_rel, lvar)}
+        end
       end
-    end
 
     left_relation_number =
       left
@@ -305,23 +307,24 @@ defmodule Elog.Query do
       end)
       |> List.first()
 
-    left_join_key = fn t ->
-      syms =
-        if Enum.count(right) > 1 do
-          left_relation[:vars]
-        else
-          join_vars
-        end
+    left_join_key_syms =
+      if right_count > 1 do
+        left_relation[:vars]
+      else
+        join_vars
+      end
 
-      Enum.reduce(syms, %{}, fn {:var, var}, acc ->
+    left_join_key = fn t ->
+      Enum.reduce(left_join_key_syms, %{}, fn {:var, var}, acc ->
         Map.put(acc, var, Map.fetch!(t, var))
       end)
     end
 
     new_tuples =
       Elog.Db.hash_join(
-        {left_relation[:tuples], left_join_key},
-        {products, compound_join_key}
+        {left_relation[:tuples], Enum.count(left_relation[:tuples]),
+         left_join_key},
+        {products, products_cardinality, compound_join_key}
       )
       |> Enum.map(fn
         {{prod_l, prod_r}, r} ->
@@ -363,11 +366,16 @@ defmodule Elog.Query do
          %{tuples: rel_tuples1},
          %{tuples: rel_tuples2}
        ]) do
-    for tuple1 <- rel_tuples1,
-        tuple2 <- rel_tuples2,
-        tuple1 != tuple2 do
-      {tuple1, tuple2}
-    end
+    products =
+      for tuple1 <- rel_tuples1,
+          tuple2 <- rel_tuples2,
+          tuple1 != tuple2 do
+        {tuple1, tuple2}
+      end
+
+    cardinality = Enum.count(rel_tuples1) * Enum.count(rel_tuples2)
+
+    {products, cardinality}
   end
 
   ##########
