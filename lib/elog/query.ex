@@ -110,8 +110,8 @@ defmodule Elog.Query do
   # than entities, leading to fewer total values,
   # and then fewer values to flatmap over
   defp filter_tuples(
-         [{:var, evar} = e, {:var, _avar} = _a],
-         %{indexes: %{aevt: aevt}} = db
+         [{:var, _evar} = _e, {:var, _avar} = _a],
+         %{indexes: %{aevt: aevt}} = _db
        ) do
     aevt.data
     |> Map.values()
@@ -126,7 +126,7 @@ defmodule Elog.Query do
 
   # [e: var, a: literal]
   # "all entities for a given attribute"
-  defp filter_tuples([{:var, evar} = e, a], %{indexes: %{aevt: aevt}} = _db) do
+  defp filter_tuples([{:var, _evar} = _e, a], %{indexes: %{aevt: aevt}} = _db) do
     Index.get(aevt, a)
   end
 
@@ -208,7 +208,7 @@ defmodule Elog.Query do
     end
   end
 
-  defp find_joins([%{vars: vars} = rel | _rels] = relations) do
+  defp find_joins([%{vars: vars} = _rel | _rels] = relations) do
     relations_graphs = relations_graph(relations)
 
     join_vars =
