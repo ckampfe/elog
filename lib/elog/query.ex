@@ -279,7 +279,7 @@ defmodule Elog.Query do
         relations
       end
 
-    {products, products_cardinality} = cartesian_product(xpro_relations)
+    # {products, products_cardinality} = cartesian_product(xpro_relations)
 
     [%{vars: left_vars}, %{vars: right_vars}] = xpro_relations
 
@@ -347,11 +347,104 @@ defmodule Elog.Query do
       end)
     end
 
+
+    #########################
+
+    [%{tuples: lt}, %{tuples: rt}] = xpro_relations
+    # r1_valset =
+    #   lt
+    #   |> Enum.map(fn tuple ->
+    #     Map.fetch!(tuple, lvar)
+    #   end)
+    #   |> MapSet.new()
+
+
+    # r2_valset =
+    #   rt
+    #   |> Enum.map(fn tuple ->
+    #     Map.fetch!(tuple, rvar)
+    #   end)
+    #   |> MapSet.new()
+
+
+    r3_r1_valset =
+      Task.async(fn ->
+        left_relation[:tuples]
+        |> Enum.map(fn tuple ->
+          Map.fetch!(tuple, lvar)
+        end)
+        |> MapSet.new()
+      end)
+
+    r3_r2_valset =
+      Task.async(fn ->
+        if right_count >= 1  do
+          left_relation[:tuples]
+          |> Enum.map(fn tuple ->
+            Map.fetch!(tuple, rvar)
+          end)
+          |> MapSet.new()
+        end
+      end)
+
+
+    r3_r1_valset = Task.await(r3_r1_valset)
+
+    r1_filtered_set =
+      Task.async(fn ->
+        lt
+        |> Enum.filter(fn tuple ->
+          MapSet.member?(r3_r1_valset, Map.fetch!(tuple, lvar))
+        end)
+      end)
+
+    r3_r2_valset = Task.await(r3_r2_valset)
+
+    r2_filtered_set =
+      Task.async(fn ->
+        rt
+        |> Enum.filter(fn tuple ->
+          MapSet.member?(r3_r2_valset, Map.fetch!(tuple, rvar))
+        end)
+      end)
+
+    # IO.inspect(left_join_key_syms, label: "ljks")
+    # IO.inspect(r1_valset, label: "r1set")
+    # IO.inspect(r2_valset, label: "r2set")
+    # IO.inspect(r3_r1_valset, label: "r3r1set")
+
+    # IO.inspect(lt, label: "r1 original")
+    # IO.inspect(r1_filtered_set, label: "r1 filtered")
+    r1_filtered_set = Task.await(r1_filtered_set)
+    r2_filtered_set = Task.await(r2_filtered_set)
+    Logger.debug("r1 diff: #{Enum.count(lt) - Enum.count(r1_filtered_set)}")
+
+    # IO.inspect(rt, label: "r2 original")
+    # IO.inspect(r2_filtered_set, label: "r2 filtered")
+    Logger.debug("r2 diff: #{Enum.count(rt) - Enum.count(r2_filtered_set)}")
+
+
+    {products, products_cardinality} =
+        cartesian_product([%{tuples: r1_filtered_set}, %{tuples: r2_filtered_set}])
+
+    Logger.debug("filtered card prod ratio = #{products_cardinality / (Enum.count(lt) * Enum.count(rt))}:1")
+
+    # IO.inspect(products, label: "products")
+
+    # # if right_count >= 1  do
+    # #   IO.inspect(r3_r2_valset, label: "r3r2set")
+    # # end
+
+    #########################
+
     new_tuples =
       Elog.Db.hash_join(
-        {left_relation[:tuples], Enum.count(left_relation[:tuples]),
+        {left_relation[:tuples],
+         Enum.count(left_relation[:tuples]),
          left_join_key},
-        {products, products_cardinality, compound_join_key}
+        {products,
+         products_cardinality,
+         compound_join_key}
       )
       |> Enum.map(fn
         {{prod_l, prod_r}, r} ->
@@ -395,23 +488,24 @@ defmodule Elog.Query do
        ]) do
     {ptime, products} =
       :timer.tc(fn ->
-        # for tuple1 <- rel_tuples1,
-        #     tuple2 <- rel_tuples2,
-        #     tuple1 != tuple2 do
-        #   {tuple1, tuple2}
-        # end
+        for tuple1 <- rel_tuples1,
+            tuple2 <- rel_tuples2,
+            tuple1 != tuple2 do
+          {tuple1, tuple2}
+        end
 
-        Stream.flat_map(rel_tuples1, fn tuple1 ->
-          Stream.map(rel_tuples2, fn
-            tuple2 ->
-              {tuple1, tuple2}
-          end)
-        end)
+        # Stream.flat_map(rel_tuples1, fn tuple1 ->
+        #   Stream.map(rel_tuples2, fn
+        #     tuple2 ->
+        #       {tuple1, tuple2}
+        #   end)
+        # end)
       end)
 
-    Logger.debug("cart prod time: #{ptime / 1000} milliseconds")
+    # Logger.debug("cart prod time: #{ptime / 1000} milliseconds")
 
     cardinality = Enum.count(rel_tuples1) * Enum.count(rel_tuples2)
+    Logger.debug("cart prod cardinality #{cardinality}")
 
     {products, cardinality}
   end

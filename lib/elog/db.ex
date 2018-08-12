@@ -318,8 +318,8 @@ defmodule Elog.Db do
         {rel2, rel1}
       end
 
-    Logger.debug("larger tuples cardinality: #{l_tuples_cardinality}")
-    Logger.debug("smaller tuples cardinality: #{r_tuples_cardinality}")
+    # Logger.debug("larger tuples cardinality: #{l_tuples_cardinality}")
+    # Logger.debug("smaller tuples cardinality: #{r_tuples_cardinality}")
 
     {hs_micros, hashed_smaller} =
       :timer.tc(fn ->
@@ -339,9 +339,9 @@ defmodule Elog.Db do
         end)
       end)
 
-    Logger.debug(
-      "time to create hashed_smaller: #{hs_micros / 1000} milliseconds"
-    )
+    # Logger.debug(
+    #   "time to create hashed_smaller: #{hs_micros / 1000} milliseconds"
+    # )
 
     {join_micros, join} =
       :timer.tc(fn ->
@@ -407,7 +407,7 @@ defmodule Elog.Db do
         # end)
       end)
 
-    Logger.debug("time to do join: #{join_micros / 1000} milliseconds")
+    # Logger.debug("time to do join: #{join_micros / 1000} milliseconds")
     join
   end
 end
