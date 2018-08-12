@@ -22,18 +22,29 @@ medium_complex = Enum.take(complex, medium)
 large_complex = Enum.take(complex, large)
 
 simple_variable_find = %{find: [~q(e), ~q(name)], where: [[~q(e), :name, ~q(name)]]}
-simple_literal_find = %{find: [~q(e), ~q(name)], where: [[~q(e), :name, "Bob"], [~q(e), :name, ~q(name)]]}
+simple_literal_find = %{find: [~q(e)], where: [[~q(e), :name, "Bob"]]}
+simple_literal_find_join_literal_first = %{find: [~q(e), ~q(name)], where: [[~q(e), :name, "Bob"], [~q(e), :name, ~q(name)]]}
+simple_literal_find_join_join_first = %{find: [~q(e), ~q(name)], where: [[~q(e), :name, ~q(name)], [~q(e), :name, "Bob"]]}
 
 small_simple_db = Db.new(small_simple)
 medium_simple_db = Db.new(medium_simple)
 large_simple_db = Db.new(large_simple)
 
 Benchee.run(%{
-  # "small simple variable find" => fn -> Db.query(small_simple_db, simple_variable_find) end,
-  # "medium simple variable find" => fn -> Db.query(medium_simple_db, simple_variable_find) end,
+  "small simple variable find" => fn -> Db.query(small_simple_db, simple_variable_find) end,
+  "medium simple variable find" => fn -> Db.query(medium_simple_db, simple_variable_find) end,
   # "large simple variable find" => fn -> Db.query(large_simple_db, simple_variable_find) end,
 
-  # "small simple literal find" => fn -> Db.query(small_simple_db, simple_literal_find) end,
-  # "medium simple literal find" => fn -> Db.query(medium_simple_db, simple_literal_find) end,
-  "large simple literal find" => fn -> Db.query(large_simple_db, simple_literal_find) |> Enum.take(1) end,
+  "small simple literal find" => fn -> Db.query(small_simple_db, simple_literal_find) end,
+  "medium simple literal find" => fn -> Db.query(medium_simple_db, simple_literal_find) end,
+  # "large simple literal find" => fn -> Db.query(large_simple_db, simple_literal_find) |> Enum.take(1) end,
+
+  "small simple literal find join literal first" => fn -> Db.query(small_simple_db, simple_literal_find_join_literal_first) end,
+  "medium simple literal find join literal first" => fn -> Db.query(medium_simple_db, simple_literal_find_join_literal_first) end,
+  # "large simple literal find" => fn -> Db.query(large_simple_db, simple_literal_find_join) |> Enum.take(1) end,
+
+  "small simple literal find join, join first" => fn -> Db.query(small_simple_db, simple_literal_find_join_join_first) end,
+  "medium simple literal find join, join first" => fn -> Db.query(medium_simple_db, simple_literal_find_join_join_first) end,
+  # "large simple literal find" => fn -> Db.query(large_simple_db, simple_literal_find_join) |> Enum.take(1) end,
+
 }, time: 10, memory_time: 2)

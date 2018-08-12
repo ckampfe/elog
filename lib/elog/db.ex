@@ -306,8 +306,8 @@ defmodule Elog.Db do
   end
 
   def hash_join(
-        {r1_tuples, r1_cardinality, r1_f} = rel1,
-        {r2_tuples, r2_cardinality, r2_f} = rel2
+        {_r1_tuples, r1_cardinality, r1_f} = rel1,
+        {_r2_tuples, r2_cardinality, r2_f} = rel2
       )
       when is_function(r1_f) and is_function(r2_f) do
     {{l_tuples, l_tuples_cardinality, lf} = _larger_relation,

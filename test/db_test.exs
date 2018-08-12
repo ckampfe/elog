@@ -5,6 +5,18 @@ defmodule ElogDbTest do
   import Elog.Syntax
 
   describe "query" do
+    # TODO:
+    # write tests and implementation for:
+    # %{find: [~q(attr)], where: [[~q(e), ~q(attr)]]}
+    # to find all attrs in db (probably AEVT to find all attrs
+    # as keys, and then flat_map to get all values)
+    # and:
+    # %{find: [~q(attr)], where: [[~q(e), "literal" _]]}
+    # (with wildcard or not? unclear)
+    # to find all entities with a literal attribute
+    # irrespective of attribute value (AEVT probably)
+
+
     test "literal no attribute" do
       query = %{find: [~q(e)], where: [[~q(e), :age, 23]]}
       db = Db.new([%{name: "Marsha"}])

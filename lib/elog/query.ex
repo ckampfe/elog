@@ -116,9 +116,7 @@ defmodule Elog.Query do
   end
 
   # [e: var, a: literal, v: var]
-  defp filter_tuples([{:var, _evar} = _e, a, {:var, _vvar} = _v], db) do
-    indexes = db.indexes
-    aevt = indexes[:aevt]
+  defp filter_tuples([{:var, _evar} = _e, a, {:var, _vvar} = _v], %{indexes: %{aevt: aevt}} = _db) do
     Index.get(aevt, a)
   end
 
@@ -128,8 +126,7 @@ defmodule Elog.Query do
   end
 
   # [e: var, a: literal, v: literal]
-  defp filter_tuples([{:var, _evar} = _e, a, v], db) do
-    avet = db.indexes[:avet]
+  defp filter_tuples([{:var, _evar} = _e, a, v], %{indexes: %{avet: avet}} = _db) do
     Index.get(avet, {a, v})
   end
 
@@ -255,14 +252,14 @@ defmodule Elog.Query do
 
     jvs = join_vars |> MapSet.new()
 
-    left_var =
+    {:var, lvar} = _left_var =
       left_vars
       |> Enum.filter(fn {:var, _var} = jv ->
         MapSet.member?(jvs, jv)
       end)
       |> List.first()
 
-    right_var =
+    {:var, rvar} = _right_var =
       right_vars
       |> Enum.filter(fn {:var, _var} = jv ->
         MapSet.member?(jvs, jv)
@@ -274,18 +271,13 @@ defmodule Elog.Query do
     compound_join_key =
       if right_count >= 1 do
         fn {left_rel, right_rel} ->
-          {:var, lvar} = left_var
-          {:var, rvar} = right_var
-
           %{
             rvar => Map.fetch!(right_rel, rvar),
             lvar => Map.fetch!(left_rel, lvar)
           }
         end
       else
-        fn {left_rel, right_rel} ->
-          {:var, lvar} = left_var
-          {:var, rvar} = right_var
+        fn {left_rel, _right_rel} ->
           %{lvar => Map.fetch!(left_rel, lvar)}
         end
       end
@@ -366,12 +358,27 @@ defmodule Elog.Query do
          %{tuples: rel_tuples1},
          %{tuples: rel_tuples2}
        ]) do
-    products =
-      for tuple1 <- rel_tuples1,
-          tuple2 <- rel_tuples2,
-          tuple1 != tuple2 do
-        {tuple1, tuple2}
-      end
+    {ptime, products} =
+     :timer.tc(fn ->
+
+
+       # for tuple1 <- rel_tuples1,
+       #     tuple2 <- rel_tuples2,
+       #     tuple1 != tuple2 do
+       #   {tuple1, tuple2}
+       # end
+
+       Stream.flat_map(rel_tuples1, fn tuple1 ->
+         Stream.map(rel_tuples2, fn
+           tuple2 ->
+             {tuple1, tuple2}
+         end)
+       end)
+
+     end)
+
+
+    Logger.debug("cart prod time: #{ptime / 1000} milliseconds")
 
     cardinality = Enum.count(rel_tuples1) * Enum.count(rel_tuples2)
 
