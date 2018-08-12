@@ -5,17 +5,74 @@ defmodule ElogDbTest do
   import Elog.Syntax
 
   describe "query" do
-    # TODO:
-    # write tests and implementation for:
-    # %{find: [~q(attr)], where: [[~q(e), ~q(attr)]]}
-    # to find all attrs in db (probably AEVT to find all attrs
-    # as keys, and then flat_map to get all values)
-    # and:
-    # %{find: [~q(attr)], where: [[~q(e), "literal" _]]}
-    # (with wildcard or not? unclear)
-    # to find all entities with a literal attribute
-    # irrespective of attribute value (AEVT probably)
+    test "find all entity attributes" do
+      query = %{find: [~q(attr)], where: [[1, ~q(attr)]]}
+      db = Db.new([%{name: "Marsha", age: 7, size: 98.0}])
+      result = Db.query(db, query)
 
+      assert result ==
+               MapSet.new([%{attr: :age}, %{attr: :name}, %{attr: :size}])
+    end
+
+    test "find all attributes for all entities" do
+      query = %{find: [~q(e), ~q(attr)], where: [[~q(e), ~q(attr)]]}
+
+      db =
+        Db.new([
+          %{name: "Marsha", age: 7, size: 98.0},
+          %{kind: "gorgon", eye_color: "blue"}
+        ])
+
+      result = Db.query(db, query)
+
+      assert result ==
+               MapSet.new([
+                 %{attr: :age, e: 1},
+                 %{attr: :eye_color, e: 2},
+                 %{attr: :kind, e: 2},
+                 %{attr: :name, e: 1},
+                 %{attr: :size, e: 1}
+               ])
+    end
+
+    test "find all entities for a given attribute" do
+      query = %{find: [~q(e)], where: [[~q(e), :size]]}
+
+      db =
+        Db.new([
+          %{name: "Marsha", age: 7, size: 98.0},
+          %{name: "bill", eye_color: "blue"},
+          %{name: "Sue", size: 1_002_242}
+        ])
+
+      result = Db.query(db, query)
+      assert result == MapSet.new([%{e: 1}, %{e: 3}])
+    end
+
+    test "find all attributes" do
+      # TODO: introduce wildcard or similar sigil value so that the engine does not carry through the entity variable
+      # this will save memory when the variable is not used/needed in the find
+      query = %{find: [~q(attr)], where: [[~q(e), ~q(attr)]]}
+
+      db =
+        Db.new([
+          %{name: "Marsha", age: 7, size: 98.0},
+          %{kind: "gorgon", eye_color: "blue"},
+          %{geography: "arid"}
+        ])
+
+      result = Db.query(db, query)
+
+      assert result ==
+               MapSet.new([
+                 %{attr: :age},
+                 %{attr: :eye_color},
+                 %{attr: :geography},
+                 %{attr: :kind},
+                 %{attr: :name},
+                 %{attr: :size}
+               ])
+    end
 
     test "literal no attribute" do
       query = %{find: [~q(e)], where: [[~q(e), :age, 23]]}

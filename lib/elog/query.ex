@@ -12,6 +12,7 @@ defmodule Elog.Query do
 
   def validate(%{find: find, where: where} = q)
       when is_map(q) and is_list(find) and is_list(where) do
+    # TODO: to real query validation here, with real error messages
     q
   end
 
@@ -102,6 +103,33 @@ defmodule Elog.Query do
     |> Enum.into(%{})
   end
 
+  # [e: var, a: var]
+  # "all entities and attributes"
+  # this is very likely slow, but I'm guessing that AEVT
+  # is the fastest, given there are probably fewer attributes
+  # than entities, leading to fewer total values,
+  # and then fewer values to flatmap over
+  defp filter_tuples(
+         [{:var, evar} = e, {:var, _avar} = _a],
+         %{indexes: %{aevt: aevt}} = db
+       ) do
+    aevt.data
+    |> Map.values()
+    |> Enum.flat_map(fn datoms -> datoms end)
+  end
+
+  # [e: literal, a: var]
+  # "all attributes for a given entity"
+  defp filter_tuples([e, {:var, _avar} = _a], %{indexes: %{eavt: eavt}} = _db) do
+    Index.get(eavt, e)
+  end
+
+  # [e: var, a: literal]
+  # "all entities for a given attribute"
+  defp filter_tuples([{:var, evar} = e, a], %{indexes: %{aevt: aevt}} = _db) do
+    Index.get(aevt, a)
+  end
+
   # [e: var, a: var, v: var]
   defp filter_tuples(
          [{:var, _evar} = _e, {:var, _avar} = _a, {:var, _vvar} = _v],
@@ -116,7 +144,10 @@ defmodule Elog.Query do
   end
 
   # [e: var, a: literal, v: var]
-  defp filter_tuples([{:var, _evar} = _e, a, {:var, _vvar} = _v], %{indexes: %{aevt: aevt}} = _db) do
+  defp filter_tuples(
+         [{:var, _evar} = _e, a, {:var, _vvar} = _v],
+         %{indexes: %{aevt: aevt}} = _db
+       ) do
     Index.get(aevt, a)
   end
 
@@ -126,7 +157,10 @@ defmodule Elog.Query do
   end
 
   # [e: var, a: literal, v: literal]
-  defp filter_tuples([{:var, _evar} = _e, a, v], %{indexes: %{avet: avet}} = _db) do
+  defp filter_tuples(
+         [{:var, _evar} = _e, a, v],
+         %{indexes: %{avet: avet}} = _db
+       ) do
     Index.get(avet, {a, v})
   end
 
@@ -174,10 +208,8 @@ defmodule Elog.Query do
     end
   end
 
-  defp find_joins(relations) do
+  defp find_joins([%{vars: vars} = rel | _rels] = relations) do
     relations_graphs = relations_graph(relations)
-    [rel | _rels] = relations
-    %{vars: vars} = rel
 
     join_vars =
       Enum.filter(vars, fn {:var, var} ->
@@ -213,22 +245,23 @@ defmodule Elog.Query do
   end
 
   defp relations_graph(relations) do
-    Enum.reduce(relations, %{}, fn %{
-                                     vars: vars,
-                                     relation_number: relation_number
-                                   },
-                                   acc ->
-      s =
-        vars
-        |> Enum.map(fn {:var, var} ->
-          var
-        end)
-        |> MapSet.new()
+    Enum.reduce(
+      relations,
+      %{},
+      fn %{vars: vars, relation_number: relation_number}, acc ->
+        s =
+          vars
+          |> Enum.map(fn {:var, var} ->
+            var
+          end)
+          |> MapSet.new()
 
-      Map.put(acc, relation_number, s)
-    end)
+        Map.put(acc, relation_number, s)
+      end
+    )
   end
 
+  # "and now for the tricky bit"
   defp join(
          %{left: left, right: right, join_vars: join_vars} = _join_info,
          relations,
@@ -252,14 +285,16 @@ defmodule Elog.Query do
 
     jvs = join_vars |> MapSet.new()
 
-    {:var, lvar} = _left_var =
+    {:var, lvar} =
+      _left_var =
       left_vars
       |> Enum.filter(fn {:var, _var} = jv ->
         MapSet.member?(jvs, jv)
       end)
       |> List.first()
 
-    {:var, rvar} = _right_var =
+    {:var, rvar} =
+      _right_var =
       right_vars
       |> Enum.filter(fn {:var, _var} = jv ->
         MapSet.member?(jvs, jv)
@@ -359,24 +394,20 @@ defmodule Elog.Query do
          %{tuples: rel_tuples2}
        ]) do
     {ptime, products} =
-     :timer.tc(fn ->
+      :timer.tc(fn ->
+        # for tuple1 <- rel_tuples1,
+        #     tuple2 <- rel_tuples2,
+        #     tuple1 != tuple2 do
+        #   {tuple1, tuple2}
+        # end
 
-
-       # for tuple1 <- rel_tuples1,
-       #     tuple2 <- rel_tuples2,
-       #     tuple1 != tuple2 do
-       #   {tuple1, tuple2}
-       # end
-
-       Stream.flat_map(rel_tuples1, fn tuple1 ->
-         Stream.map(rel_tuples2, fn
-           tuple2 ->
-             {tuple1, tuple2}
-         end)
-       end)
-
-     end)
-
+        Stream.flat_map(rel_tuples1, fn tuple1 ->
+          Stream.map(rel_tuples2, fn
+            tuple2 ->
+              {tuple1, tuple2}
+          end)
+        end)
+      end)
 
     Logger.debug("cart prod time: #{ptime / 1000} milliseconds")
 
