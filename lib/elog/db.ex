@@ -95,15 +95,15 @@ defmodule Elog.Db do
       get(this, entity_id, [])
     end
 
-    def get(this, entity_id, default) do
-      Map.get(this.data, entity_id, default)
+    def get(%{data: data}, entity_id, default) do
+      Map.get(data, entity_id, default)
     end
 
-    def insert(this, datom) do
+    def insert(%{data: data} = this, datom) do
       e = datom(datom, :e)
 
       {_, new_data} =
-        Map.get_and_update(this.data, e, fn
+        Map.get_and_update(data, e, fn
           nil ->
             {nil, [datom]}
 
@@ -114,11 +114,11 @@ defmodule Elog.Db do
       %{this | data: new_data}
     end
 
-    def put(this, datom) do
+    def put(%{data: data} = this, datom) do
       e = datom(datom, :e)
 
       {_, new_data} =
-        Map.get_and_update(this.data, e, fn
+        Map.get_and_update(data, e, fn
           nil ->
             {nil, [datom]}
 
@@ -140,15 +140,15 @@ defmodule Elog.Db do
       get(this, entity_id, [])
     end
 
-    def get(this, attribute_name, default) do
-      Map.get(this.data, attribute_name, default)
+    def get(%{data: data}, attribute_name, default) do
+      Map.get(data, attribute_name, default)
     end
 
-    def insert(this, datom) do
+    def insert(%{data: data} = this, datom) do
       a = datom(datom, :a)
 
       {_, new_data} =
-        Map.get_and_update(this.data, a, fn
+        Map.get_and_update(data, a, fn
           nil ->
             {nil, [datom]}
 
@@ -185,15 +185,15 @@ defmodule Elog.Db do
       get(this, av, [])
     end
 
-    def get(this, av, default) do
-      Map.get(this.data, av, default)
+    def get(%{data: data}, av, default) do
+      Map.get(data, av, default)
     end
 
-    def insert(this, datom) do
+    def insert(%{data: data} = this, datom) do
       av = {datom(datom, :a), datom(datom, :v)}
 
       {_, new_data} =
-        Map.get_and_update(this.data, av, fn
+        Map.get_and_update(data, av, fn
           nil ->
             {nil, [datom]}
 
@@ -204,11 +204,11 @@ defmodule Elog.Db do
       %{this | data: new_data}
     end
 
-    def put(this, datom) do
+    def put(%{data: data} = this, datom) do
       av = {datom(datom, :a), datom(datom, :v)}
 
       {_, new_data} =
-        Map.get_and_update(this.data, av, fn
+        Map.get_and_update(data, av, fn
           nil ->
             {nil, [datom]}
 
@@ -256,15 +256,13 @@ defmodule Elog.Db do
     datoms = to_datoms({m, entity_id}, transaction_id)
 
     indexes =
-      Enum.reduce(datoms, db.indexes, fn datom, outer_acc ->
-        Enum.reduce(db.indexes, outer_acc, fn {index_kind, _index}, inner_acc ->
-          new_index =
-            inner_acc
-            |> Map.fetch!(index_kind)
-            |> Index.put(datom)
+      Enum.reduce(db.indexes, db.indexes, fn {index_kind, index}, idxs ->
+        new_index =
+          Enum.reduce(datoms, index, fn datom, idx ->
+            Index.put(idx, datom)
+          end)
 
-          Map.put(inner_acc, index_kind, new_index)
-        end)
+        Map.put(idxs, index_kind, new_index)
       end)
 
     transact(
@@ -286,16 +284,14 @@ defmodule Elog.Db do
         Map.put(acc, index, initialize_index(index))
       end)
 
-    Enum.reduce(datoms, initial_indexes, fn datom, outer_acc ->
-      Enum.reduce(initial_indexes, outer_acc, fn {index_kind, _index},
-                                                 inner_acc ->
-        new_index =
-          inner_acc
-          |> Map.fetch!(index_kind)
-          |> Index.insert(datom)
+    Enum.reduce(initial_indexes, initial_indexes, fn {index_kind, index},
+                                                     idxs ->
+      new_index =
+        Enum.reduce(datoms, index, fn datom, idx ->
+          Index.insert(idx, datom)
+        end)
 
-        Map.put(inner_acc, index_kind, new_index)
-      end)
+      Map.put(idxs, index_kind, new_index)
     end)
   end
 
