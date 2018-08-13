@@ -301,7 +301,7 @@ defmodule Elog.Db do
 
   defp to_datoms({map, entity_id}, transaction_id) do
     Enum.map(map, fn {k, v} ->
-      datom(e: entity_id, a: k, v: v, t: transaction_id) 
+      datom(e: entity_id, a: k, v: v, t: transaction_id)
     end)
   end
 
@@ -342,7 +342,6 @@ defmodule Elog.Db do
 
     {join_micros, join} =
       :timer.tc(fn ->
-
         Enum.reduce(l_tuples, [], fn row, acc ->
           case Map.get(hashed_smaller, lf.(row)) do
             nil ->

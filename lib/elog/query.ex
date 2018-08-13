@@ -191,7 +191,6 @@ defmodule Elog.Query do
 
   defp datoms_to_tuples(filtered_datoms, symbols) do
     filtered_datoms
-    # |> Flow.from_enumerable()
     |> Enum.map(fn datom ->
       Enum.reduce(symbols, %{}, fn {{:var, var}, field}, acc ->
         %{^field => datom_index} = @datom_to_record_map
@@ -313,8 +312,9 @@ defmodule Elog.Query do
     compound_join_key =
       if right_count >= 1 do
         fn {left_rel, right_rel} ->
-            %{^rvar => rvar_value} = right_rel
-            %{^lvar => lvar_value} = left_rel
+          %{^rvar => rvar_value} = right_rel
+          %{^lvar => lvar_value} = left_rel
+
           %{
             rvar => rvar_value,
             lvar => lvar_value
@@ -357,7 +357,6 @@ defmodule Elog.Query do
       end)
     end
 
-
     #########################
 
     [%{tuples: lt}, %{tuples: rt}] = xpro_relations
@@ -368,14 +367,12 @@ defmodule Elog.Query do
     #   end)
     #   |> MapSet.new()
 
-
     # r2_valset =
     #   rt
     #   |> Enum.map(fn tuple ->
     #     Map.fetch!(tuple, rvar)
     #   end)
     #   |> MapSet.new()
-
 
     r3_r1_valset =
       Task.async(fn ->
@@ -388,7 +385,7 @@ defmodule Elog.Query do
 
     r3_r2_valset =
       Task.async(fn ->
-        if right_count >= 1  do
+        if right_count >= 1 do
           left_relation[:tuples]
           |> Enum.map(fn tuple ->
             Map.fetch!(tuple, rvar)
@@ -432,9 +429,8 @@ defmodule Elog.Query do
     # IO.inspect(r2_filtered_set, label: "r2 filtered")
     # Logger.debug("r2 diff: #{Enum.count(rt) - Enum.count(r2_filtered_set)}")
 
-
     {products, products_cardinality} =
-        cartesian_product([%{tuples: r1_filtered_set}, %{tuples: r2_filtered_set}])
+      cartesian_product([%{tuples: r1_filtered_set}, %{tuples: r2_filtered_set}])
 
     # Logger.debug("filtered card prod ratio = #{products_cardinality / (Enum.count(lt) * Enum.count(rt))}:1")
 
@@ -448,12 +444,9 @@ defmodule Elog.Query do
 
     new_tuples =
       Elog.Db.hash_join(
-        {left_relation[:tuples],
-         Enum.count(left_relation[:tuples]),
+        {left_relation[:tuples], Enum.count(left_relation[:tuples]),
          left_join_key},
-        {products,
-         products_cardinality,
-         compound_join_key}
+        {products, products_cardinality, compound_join_key}
       )
       |> Enum.map(fn
         {{prod_l, prod_r}, r} ->
@@ -502,6 +495,7 @@ defmodule Elog.Query do
             tuple1 != tuple2 do
           {tuple1, tuple2}
         end
+
         # Stream.flat_map(rel_tuples1, fn tuple1 ->
         #   Stream.map(rel_tuples2, fn tuple2 ->
         #     {tuple1, tuple2}
