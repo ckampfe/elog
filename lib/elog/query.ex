@@ -24,7 +24,8 @@ defmodule Elog.Query do
     tuples
     |> Enum.map(fn tuple ->
       Enum.reduce(find, %{}, fn {:var, var}, acc ->
-        Map.put(acc, var, Map.fetch!(tuple, var))
+        %{^var => val} = tuple
+        Map.put(acc, var, val)
       end)
     end)
     |> MapSet.new()
@@ -198,10 +199,10 @@ defmodule Elog.Query do
   defp var_match?(_term, _lookup, _tuple), do: false
 
   defp literal_match?(literal, field, tuple) do
-    tuple_attribute = Map.fetch!(tuple, :a)
+    %{a: tuple_attribute} = tuple
 
     if tuple_attribute == field do
-      tuple_value = Map.fetch!(tuple, :v)
+      %{v: tuple_value} = tuple
       tuple_value == literal
     else
       false
@@ -306,14 +307,17 @@ defmodule Elog.Query do
     compound_join_key =
       if right_count >= 1 do
         fn {left_rel, right_rel} ->
+            %{^rvar => rvar_value} = right_rel
+            %{^lvar => lvar_value} = left_rel
           %{
-            rvar => Map.fetch!(right_rel, rvar),
-            lvar => Map.fetch!(left_rel, lvar)
+            rvar => rvar_value,
+            lvar => lvar_value
           }
         end
       else
         fn {left_rel, _right_rel} ->
-          %{lvar => Map.fetch!(left_rel, lvar)}
+          %{^lvar => lvar_value} = left_rel
+          %{lvar => lvar_value}
         end
       end
 
@@ -393,8 +397,8 @@ defmodule Elog.Query do
     r1_filtered_set =
       Task.async(fn ->
         lt
-        |> Enum.filter(fn tuple ->
-          MapSet.member?(r3_r1_valset, Map.fetch!(tuple, lvar))
+        |> Enum.filter(fn %{^lvar => val} ->
+          MapSet.member?(r3_r1_valset, val)
         end)
       end)
 
@@ -403,8 +407,8 @@ defmodule Elog.Query do
     r2_filtered_set =
       Task.async(fn ->
         rt
-        |> Enum.filter(fn tuple ->
-          MapSet.member?(r3_r2_valset, Map.fetch!(tuple, rvar))
+        |> Enum.filter(fn %{^rvar => val} ->
+          MapSet.member?(r3_r2_valset, val)
         end)
       end)
 
