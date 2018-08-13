@@ -7,8 +7,10 @@ defmodule Elog.Query do
   require Strand.Protocol.Digraph, as: DG
   require Logger
   alias Elog.Db.Index
+  import Elog.Datom
 
   @datom_schema_eavt [:e, :a, :v, :t]
+  @datom_to_record_map %{e: 1, a: 2, v: 3, t: 4}
 
   def validate(%{find: find, where: where} = q)
       when is_map(q) and is_list(find) and is_list(where) do
@@ -188,11 +190,15 @@ defmodule Elog.Query do
   end
 
   defp datoms_to_tuples(filtered_datoms, symbols) do
-    Enum.map(filtered_datoms, fn datom ->
+    filtered_datoms
+    # |> Flow.from_enumerable()
+    |> Enum.map(fn datom ->
       Enum.reduce(symbols, %{}, fn {{:var, var}, field}, acc ->
-        Map.put(acc, var, Map.fetch!(datom, field))
+        %{^field => datom_index} = @datom_to_record_map
+        Map.put(acc, var, elem(datom, datom_index))
       end)
     end)
+    |> MapSet.new()
   end
 
   defp var_match?({:var, _} = _term, _lookup, _tuple), do: true
@@ -391,7 +397,6 @@ defmodule Elog.Query do
         end
       end)
 
-
     r3_r1_valset = Task.await(r3_r1_valset)
 
     r1_filtered_set =
@@ -421,17 +426,17 @@ defmodule Elog.Query do
     # IO.inspect(r1_filtered_set, label: "r1 filtered")
     r1_filtered_set = Task.await(r1_filtered_set)
     r2_filtered_set = Task.await(r2_filtered_set)
-    Logger.debug("r1 diff: #{Enum.count(lt) - Enum.count(r1_filtered_set)}")
+    # Logger.debug("r1 diff: #{Enum.count(lt) - Enum.count(r1_filtered_set)}")
 
     # IO.inspect(rt, label: "r2 original")
     # IO.inspect(r2_filtered_set, label: "r2 filtered")
-    Logger.debug("r2 diff: #{Enum.count(rt) - Enum.count(r2_filtered_set)}")
+    # Logger.debug("r2 diff: #{Enum.count(rt) - Enum.count(r2_filtered_set)}")
 
 
     {products, products_cardinality} =
         cartesian_product([%{tuples: r1_filtered_set}, %{tuples: r2_filtered_set}])
 
-    Logger.debug("filtered card prod ratio = #{products_cardinality / (Enum.count(lt) * Enum.count(rt))}:1")
+    # Logger.debug("filtered card prod ratio = #{products_cardinality / (Enum.count(lt) * Enum.count(rt))}:1")
 
     # IO.inspect(products, label: "products")
 
@@ -497,19 +502,17 @@ defmodule Elog.Query do
             tuple1 != tuple2 do
           {tuple1, tuple2}
         end
-
         # Stream.flat_map(rel_tuples1, fn tuple1 ->
-        #   Stream.map(rel_tuples2, fn
-        #     tuple2 ->
-        #       {tuple1, tuple2}
+        #   Stream.map(rel_tuples2, fn tuple2 ->
+        #     {tuple1, tuple2}
         #   end)
         # end)
       end)
 
-    # Logger.debug("cart prod time: #{ptime / 1000} milliseconds")
-
     cardinality = Enum.count(rel_tuples1) * Enum.count(rel_tuples2)
-    Logger.debug("cart prod cardinality #{cardinality}")
+
+    # Logger.debug("cart prod time: #{ptime / 1000} milliseconds")
+    # Logger.debug("cart prod cardinality #{cardinality}")
 
     {products, cardinality}
   end

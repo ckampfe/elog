@@ -1,3 +1,4 @@
 defmodule Elog.Datom do
-  defstruct e: nil, a: nil, v: nil, t: nil
+  require Record
+  Record.defrecord :datom, [:e, :a, :v, :t]
 end

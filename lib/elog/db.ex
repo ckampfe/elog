@@ -1,5 +1,5 @@
 defmodule Elog.Db do
-  alias Elog.Datom
+  import Elog.Datom
   alias Elog.Query
   require Logger
 
@@ -100,7 +100,7 @@ defmodule Elog.Db do
     end
 
     def insert(this, datom) do
-      e = datom.e
+      e = datom(datom, :e)
 
       {_, new_data} =
         Map.get_and_update(this.data, e, fn
@@ -115,7 +115,7 @@ defmodule Elog.Db do
     end
 
     def put(this, datom) do
-      e = datom.e
+      e = datom(datom, :e)
 
       {_, new_data} =
         Map.get_and_update(this.data, e, fn
@@ -124,8 +124,8 @@ defmodule Elog.Db do
 
           old ->
             filtered_olds =
-              Enum.reject(old, fn %Elog.Datom{a: this_a} ->
-                datom.a == this_a
+              Enum.reject(old, fn datom(a: this_a) ->
+                datom(datom, :a) == this_a
               end)
 
             {nil, [datom | filtered_olds]}
@@ -145,7 +145,7 @@ defmodule Elog.Db do
     end
 
     def insert(this, datom) do
-      a = datom.a
+      a = datom(datom, :a)
 
       {_, new_data} =
         Map.get_and_update(this.data, a, fn
@@ -160,7 +160,7 @@ defmodule Elog.Db do
     end
 
     def put(this, datom) do
-      a = datom.a
+      a = datom(datom, :a)
 
       {_, new_data} =
         Map.get_and_update(this.data, a, fn
@@ -169,8 +169,8 @@ defmodule Elog.Db do
 
           old ->
             filtered_olds =
-              Enum.reject(old, fn %Elog.Datom{e: this_e} ->
-                datom.e == this_e
+              Enum.reject(old, fn datom(e: this_e) ->
+                datom(datom, :e) == this_e
               end)
 
             {nil, [datom | filtered_olds]}
@@ -190,7 +190,7 @@ defmodule Elog.Db do
     end
 
     def insert(this, datom) do
-      av = {datom.a, datom.v}
+      av = {datom(datom, :a), datom(datom, :v)}
 
       {_, new_data} =
         Map.get_and_update(this.data, av, fn
@@ -205,7 +205,7 @@ defmodule Elog.Db do
     end
 
     def put(this, datom) do
-      av = {datom.a, datom.v}
+      av = {datom(datom, :a), datom(datom, :v)}
 
       {_, new_data} =
         Map.get_and_update(this.data, av, fn
@@ -214,8 +214,8 @@ defmodule Elog.Db do
 
           old ->
             filtered_olds =
-              Enum.reject(old, fn %Elog.Datom{e: this_e} ->
-                datom.e == this_e
+              Enum.reject(old, fn datom(e: this_e) ->
+                datom(datom, :e) == this_e
               end)
 
             {nil, filtered_olds}
@@ -301,7 +301,7 @@ defmodule Elog.Db do
 
   defp to_datoms({map, entity_id}, transaction_id) do
     Enum.map(map, fn {k, v} ->
-      %Datom{e: entity_id, a: k, v: v, t: transaction_id}
+      datom(e: entity_id, a: k, v: v, t: transaction_id) 
     end)
   end
 
@@ -310,16 +310,13 @@ defmodule Elog.Db do
         {_r2_tuples, r2_cardinality, r2_f} = rel2
       )
       when is_function(r1_f) and is_function(r2_f) do
-    {{l_tuples, l_tuples_cardinality, lf} = _larger_relation,
-     {s_tuples, r_tuples_cardinality, sf} = _smaller_relation} =
+    {{l_tuples, _l_tuples_cardinality, lf} = _larger_relation,
+     {s_tuples, _r_tuples_cardinality, sf} = _smaller_relation} =
       if r1_cardinality >= r2_cardinality do
         {rel1, rel2}
       else
         {rel2, rel1}
       end
-
-    # Logger.debug("larger tuples cardinality: #{l_tuples_cardinality}")
-    # Logger.debug("smaller tuples cardinality: #{r_tuples_cardinality}")
 
     {hs_micros, hashed_smaller} =
       :timer.tc(fn ->
@@ -345,66 +342,18 @@ defmodule Elog.Db do
 
     {join_micros, join} =
       :timer.tc(fn ->
-        # parts = Enum.chunk_every(l_tuples, 1000)
-        # Enum.map(parts, fn part ->
-        #   Task.async(fn ->
-        #     Enum.flat_map(part, fn row ->
-        #       join_val = lf.(row)
-        #       match_rows = Map.get(hashed_smaller, join_val, [])
-        #       Enum.map(match_rows, fn mr -> {row, mr} end)
-        #     end)
-        #   end)
-        # end)
-        # |> Enum.flat_map(fn t -> Task.await(t) end)
-
-        # Enum.flat_map(l_tuples, fn row ->
-        #   join_val = lf.(row)
-        #   match_rows = Map.get(hashed_smaller, join_val, [])
-        #   Enum.map(match_rows, fn mr -> {row, mr} end)
-        # end)
 
         Enum.reduce(l_tuples, [], fn row, acc ->
-          join_val = lf.(row)
-          match_rows = Map.get(hashed_smaller, join_val)
+          case Map.get(hashed_smaller, lf.(row)) do
+            nil ->
+              acc
 
-          if match_rows do
-            Enum.reduce(match_rows, acc, fn v, acc2 ->
-              [{row, v} | acc2]
-            end)
-          else
-            acc
+            match_rows ->
+              Enum.reduce(match_rows, acc, fn v, acc2 ->
+                [{row, v} | acc2]
+              end)
           end
         end)
-
-        # {:ok, agent} = Agent.start_link(fn -> 1 end)
-        # chunk_size = 1000
-        # l_tuples_chunks = Enum.chunk_every(l_tuples, chunk_size)
-        # Enum.map(l_tuples_chunks, fn chunk ->
-        #   Task.async(fn ->
-        #     Enum.reduce(chunk, [], fn row, acc ->
-        #       join_val = lf.(row)
-        #       match_rows = Map.get(hashed_smaller, join_val)
-
-        #       if match_rows do
-        #         join =
-        #         for match_row <- match_rows do
-        #           {row, match_row}
-        #         end
-
-        #         join ++ acc
-        #       else
-        #         acc
-        #       end
-        #     end) |> MapSet.new()
-        #   end)
-        # end)
-        # |> Enum.reduce(MapSet.new(), fn chunk, acc ->
-        #   r = Task.await(chunk, 10_000)
-        #   Agent.update(agent, fn old -> old + 1 end)
-        #   IO.puts("chunk done")
-        #   IO.puts(Agent.get(agent, fn s -> s end))
-        #   MapSet.union(r, acc)
-        # end)
       end)
 
     # Logger.debug("time to do join: #{join_micros / 1000} milliseconds")
