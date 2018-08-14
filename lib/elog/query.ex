@@ -11,6 +11,7 @@ defmodule Elog.Query do
 
   @datom_schema_eavt [:e, :a, :v, :t]
   @datom_to_record_map %{e: 1, a: 2, v: 3, t: 4}
+  @aggregates MapSet.new([:avg, :max, :min, :count, :sum])
 
   def validate(%{find: find, where: where} = q)
       when is_map(q) and is_list(find) and is_list(where) do
@@ -25,13 +26,94 @@ defmodule Elog.Query do
   def extract_finds(%{tuples: tuples}, find) do
     tuples
     |> Enum.map(fn tuple ->
-      Enum.reduce(find, %{}, fn {:var, var}, acc ->
-        %{^var => val} = tuple
-        Map.put(acc, var, val)
+      Enum.reduce(find, %{}, fn
+        {_, {:var, var}, _rename}, acc ->
+          %{^var => val} = tuple
+          Map.put(acc, var, val)
+
+        {_, {:var, var}}, acc ->
+          %{^var => val} = tuple
+          Map.put(acc, var, val)
+
+        {:var, var}, acc ->
+          %{^var => val} = tuple
+          Map.put(acc, var, val)
       end)
     end)
     |> MapSet.new()
   end
+
+  def compute_aggregates(set, find) do
+    case find_aggregates(find) do
+      {[] = _aggregates, _na} ->
+        set
+
+      {aggregates, non_aggregates} ->
+        grouped =
+          Enum.group_by(set, fn tuple ->
+            Enum.reduce(non_aggregates, %{}, fn {:var, na}, acc ->
+              Map.put(acc, na, Map.fetch!(tuple, na))
+            end)
+          end)
+
+        Enum.map(grouped, fn {gkey, gdata} ->
+          Enum.reduce(aggregates, %{}, fn
+            {agg_op, {:var, agg_field}, rename}, acc ->
+              gdata_fields =
+                Enum.map(gdata, fn t -> Map.fetch!(t, agg_field) end)
+
+              agg_return = apply(__MODULE__, agg_op, [gdata_fields])
+
+              Map.put(acc, rename, agg_return)
+
+            {agg_op, {:var, agg_field}}, acc ->
+              gdata_fields =
+                Enum.map(gdata, fn t -> Map.fetch!(t, agg_field) end)
+
+              agg_return = apply(__MODULE__, agg_op, [gdata_fields])
+
+              Map.put(acc, agg_op, agg_return)
+          end)
+          |> Map.merge(gkey)
+        end)
+        |> MapSet.new()
+    end
+  end
+
+  defp find_aggregates(find) do
+    results = Enum.group_by(find, &aggregate?/1)
+    {Map.get(results, true, []), Map.get(results, false, [])}
+  end
+
+  def avg(set) do
+    Enum.sum(set) / Enum.count(set)
+  end
+
+  def count(set) do
+    Enum.count(set)
+  end
+
+  def max(set) do
+    Enum.max(set)
+  end
+
+  def min(set) do
+    Enum.min(set)
+  end
+
+  def sum(set) do
+    Enum.sum(set)
+  end
+
+  def aggregate?({agg_term, _, _}) do
+    MapSet.member?(@aggregates, agg_term)
+  end
+
+  def aggregate?({agg_term, _}) do
+    MapSet.member?(@aggregates, agg_term)
+  end
+
+  def aggregate?(_), do: false
 
   def to_relations(%{find: _find, where: _wheres} = q, db) do
     to_relations(q, [], db, 0)

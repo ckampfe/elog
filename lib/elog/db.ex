@@ -3,6 +3,12 @@ defmodule Elog.Db do
   alias Elog.Query
   require Logger
 
+  # TODO:
+  # - negation
+  # - functions in clauses
+  # - aggregates in finds
+  # - conditionals
+
   defstruct active_indexes: MapSet.new(), indexes: %{}, current_entity_id: 1
 
   @doc """
@@ -69,6 +75,7 @@ defmodule Elog.Db do
     |> Query.validate()
     |> Query.to_relations(db)
     |> Query.extract_finds(q[:find])
+    |> Query.compute_aggregates(q[:find])
   end
 
   defprotocol Index do
