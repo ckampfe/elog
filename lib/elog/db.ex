@@ -4,10 +4,11 @@ defmodule Elog.Db do
   require Logger
 
   # TODO:
-  # - negation
-  # - functions in clauses
-  # - aggregates in finds
-  # - conditionals
+  # [ ] negation
+  # [ ] functions in clauses
+  # [x] built-in aggregates in finds
+  # [ ] user-defined aggregates in finds
+  # [ ] conditionals
 
   defstruct active_indexes: MapSet.new(), indexes: %{}, current_entity_id: 1
 
@@ -321,45 +322,33 @@ defmodule Elog.Db do
         {rel2, rel1}
       end
 
-    {hs_micros, hashed_smaller} =
-      :timer.tc(fn ->
-        Enum.reduce(s_tuples, %{}, fn row, acc ->
-          join_attr_value = sf.(row)
+    hashed_smaller =
+      Enum.reduce(s_tuples, %{}, fn row, acc ->
+        join_attr_value = sf.(row)
 
-          {_, rows} =
-            Map.get_and_update(acc, join_attr_value, fn
-              nil ->
-                {nil, [row]}
-
-              existing ->
-                {nil, [row | existing]}
-            end)
-
-          rows
-        end)
-      end)
-
-    # Logger.debug(
-    #   "time to create hashed_smaller: #{hs_micros / 1000} milliseconds"
-    # )
-
-    {join_micros, join} =
-      :timer.tc(fn ->
-        Enum.reduce(l_tuples, [], fn row, acc ->
-          case Map.get(hashed_smaller, lf.(row)) do
+        {_, rows} =
+          Map.get_and_update(acc, join_attr_value, fn
             nil ->
-              acc
+              {nil, [row]}
 
-            match_rows ->
-              Enum.reduce(match_rows, acc, fn v, acc2 ->
-                [{row, v} | acc2]
-              end)
-          end
-        end)
+            existing ->
+              {nil, [row | existing]}
+          end)
+
+        rows
       end)
 
-    # Logger.debug("time to do join: #{join_micros / 1000} milliseconds")
-    join
+    Enum.reduce(l_tuples, [], fn row, acc ->
+      case Map.get(hashed_smaller, lf.(row)) do
+        nil ->
+          acc
+
+        match_rows ->
+          Enum.reduce(match_rows, acc, fn v, acc2 ->
+            [{row, v} | acc2]
+          end)
+      end
+    end)
   end
 end
 

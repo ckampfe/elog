@@ -51,9 +51,7 @@ defmodule Elog.Query do
       {aggregates, non_aggregates} ->
         grouped =
           Enum.group_by(set, fn tuple ->
-            Enum.reduce(non_aggregates, %{}, fn {:var, na}, acc ->
-              Map.put(acc, na, Map.fetch!(tuple, na))
-            end)
+            Map.take(tuple, Enum.map(non_aggregates, fn {:var, v} -> v end))
           end)
 
         Enum.map(grouped, fn {gkey, gdata} ->
@@ -533,12 +531,12 @@ defmodule Elog.Query do
       |> Enum.map(fn
         {{prod_l, prod_r}, r} ->
           Enum.reduce([prod_l, prod_r, r], %{}, fn rel, acc ->
-            Map.merge(rel, acc)
+            Map.merge(acc, rel)
           end)
 
         {r, {prod_l, prod_r}} ->
           Enum.reduce([prod_l, prod_r, r], %{}, fn rel, acc ->
-            Map.merge(rel, acc)
+            Map.merge(acc, rel)
           end)
       end)
       |> MapSet.new()
@@ -570,25 +568,20 @@ defmodule Elog.Query do
          %{tuples: rel_tuples1},
          %{tuples: rel_tuples2}
        ]) do
-    {ptime, products} =
-      :timer.tc(fn ->
-        for tuple1 <- rel_tuples1,
-            tuple2 <- rel_tuples2,
-            tuple1 != tuple2 do
-          {tuple1, tuple2}
-        end
+    products =
+      for tuple1 <- rel_tuples1,
+          tuple2 <- rel_tuples2,
+          tuple1 != tuple2 do
+        {tuple1, tuple2}
+      end
 
-        # Stream.flat_map(rel_tuples1, fn tuple1 ->
-        #   Stream.map(rel_tuples2, fn tuple2 ->
-        #     {tuple1, tuple2}
-        #   end)
-        # end)
-      end)
+    # Stream.flat_map(rel_tuples1, fn tuple1 ->
+    #   Stream.map(rel_tuples2, fn tuple2 ->
+    #     {tuple1, tuple2}
+    #   end)
+    # end)
 
     cardinality = Enum.count(rel_tuples1) * Enum.count(rel_tuples2)
-
-    # Logger.debug("cart prod time: #{ptime / 1000} milliseconds")
-    # Logger.debug("cart prod cardinality #{cardinality}")
 
     {products, cardinality}
   end

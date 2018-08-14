@@ -139,6 +139,37 @@ defmodule ElogDbTest do
                ])
     end
 
+    test "more direct joins" do
+      query = %{
+        find: [~q(name), ~q(age), ~q(height)],
+        where: [
+          [~q(e), :name, ~q(name)],
+          [~q(e), :age, ~q(age)],
+          [~q(e), :height, ~q(height)]
+        ]
+      }
+
+      db =
+        Db.new([
+          %{name: "Bill", age: 2, height: 9},
+          %{name: "Jim", age: 4, height: 4},
+          %{name: "Gail", age: 842, height: 1},
+          %{name: "Robin", age: 0, height: 141},
+          %{name: "James", age: 1, height: 4802}
+        ])
+
+      result = Db.query(db, query)
+
+      assert result ==
+               MapSet.new([
+                 %{name: "Bill", age: 2, height: 9},
+                 %{name: "Jim", age: 4, height: 4},
+                 %{name: "Gail", age: 842, height: 1},
+                 %{name: "Robin", age: 0, height: 141},
+                 %{name: "James", age: 1, height: 4802}
+               ])
+    end
+
     test "literal value match" do
       query = %{find: [~q(e)], where: [[~q(e), :name, "Marsha"]]}
       db = Db.new([%{name: "Marsha"}])
