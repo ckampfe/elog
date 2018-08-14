@@ -1,5 +1,5 @@
 defmodule ElogDbTest do
-  use ExUnit.Case
+  use ExUnit.Case, async: true
   doctest Elog.Db
   alias Elog.Db
   import Elog.Syntax

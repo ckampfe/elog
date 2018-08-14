@@ -1,5 +1,5 @@
 defmodule ElogTest do
-  use ExUnit.Case
+  use ExUnit.Case, async: true
   doctest Elog
 
   test "greets the world" do
