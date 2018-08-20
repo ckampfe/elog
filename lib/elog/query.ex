@@ -401,8 +401,7 @@ defmodule Elog.Query do
     compound_join_key =
       if right_count >= 1 do
         fn xpro_rel ->
-          %{^rvar => rvar_value,
-            ^lvar => lvar_value} = xpro_rel
+          %{^rvar => rvar_value, ^lvar => lvar_value} = xpro_rel
 
           %{
             rvar => rvar_value,

@@ -286,7 +286,12 @@ defmodule ElogDbAggregatesTest do
 
       assert result ==
                MapSet.new([
-                 %{name: "Christopher", average_age: 42.0, max_age: 63, count: 2},
+                 %{
+                   name: "Christopher",
+                   average_age: 42.0,
+                   max_age: 63,
+                   count: 2
+                 },
                  %{name: "Marsha", average_age: 374.5, max_age: 742, count: 2}
                ])
     end
