@@ -9,6 +9,9 @@ defmodule Elog.Db do
   # [x] built-in aggregates in finds
   # [ ] user-defined aggregates in finds
   # [ ] conditionals
+  # [ ] wildcards, like: [~q(e), :name, _]
+  # [ ] retractions
+  # [ ] transaction log
 
   defstruct active_indexes: MapSet.new(), indexes: %{}, current_entity_id: 1
 
