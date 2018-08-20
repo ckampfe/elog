@@ -49,21 +49,21 @@ large_complex_db = Db.new(large_complex)
 Benchee.run(%{
   "small simple variable find" => fn -> Db.query(small_simple_db, simple_variable_find) end,
   "medium simple variable find" => fn -> Db.query(medium_simple_db, simple_variable_find) end,
-  # "large simple variable find" => fn -> Db.query(large_simple_db, simple_variable_find) end,
+  "large simple variable find" => fn -> Db.query(large_simple_db, simple_variable_find) end,
 
   "small simple literal find" => fn -> Db.query(small_simple_db, simple_literal_find) end,
   "medium simple literal find" => fn -> Db.query(medium_simple_db, simple_literal_find) end,
-  # "large simple literal find" => fn -> Db.query(large_simple_db, simple_literal_find) end,
+  "large simple literal find" => fn -> Db.query(large_simple_db, simple_literal_find) end,
 
   "small simple literal find join literal first" => fn -> Db.query(small_simple_db, simple_literal_find_join_literal_first) end,
   "medium simple literal find join literal first" => fn -> Db.query(medium_simple_db, simple_literal_find_join_literal_first) end,
 
-  # "large simple literal find join literal first" => fn -> Db.query(large_simple_db, simple_literal_find_join_literal_first) end,
+  "large simple literal find join literal first" => fn -> Db.query(large_simple_db, simple_literal_find_join_literal_first) end,
 
   "small simple literal find join, join first" => fn -> Db.query(small_simple_db, simple_literal_find_join_join_first) end,
   "medium simple literal find join, join first" => fn -> Db.query(medium_simple_db, simple_literal_find_join_join_first) end,
 
-  # "large simple literal find join join first" => fn -> Db.query(large_simple_db, simple_literal_find_join_join_first) end,
+  "large simple literal find join join first" => fn -> Db.query(large_simple_db, simple_literal_find_join_join_first) end,
 
   "small complex find" => fn -> Db.query(small_complex_db, simple_variable_find) end,
   "medium complex find" => fn -> Db.query(medium_complex_db, simple_variable_find) end,
