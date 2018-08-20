@@ -270,4 +270,68 @@ defmodule ElogDbTest do
       assert result == MapSet.new([%{e: 1, name: "Jamie"}])
     end
   end
+
+  describe "conditionals" do
+    test "or working" do
+      query = %{
+        find: [~q(e), ~q(name), ~q(eye_color)],
+        where: [
+          [~q(e), :name, ~q(name)],
+          {:or,
+           [
+             [~q(e), :eye_color, :blue],
+             [~q(e), :eye_color, :green],
+             [~q(e), :eye_color, :gray]
+           ]},
+          [~q(e), :eye_color, ~q(eye_color)]
+        ]
+      }
+
+      db =
+        Db.new([
+          %{name: "Bill", eye_color: :blue},
+          %{name: "May", eye_color: :green},
+          %{name: "Millie", eye_color: :hazel},
+          %{name: "Murph", eye_color: :gray}
+        ])
+
+      result = Db.query(db, query)
+
+      assert result ==
+               MapSet.new([
+                 %{e: 1, eye_color: :blue, name: "Bill"},
+                 %{e: 2, eye_color: :green, name: "May"},
+                 %{e: 4, name: "Murph", eye_color: :gray}
+               ])
+    end
+
+    test "or where vars don't equal" do
+      query = %{
+        find: [~q(e), ~q(name), ~q(eye_color)],
+        where: [
+          {:or,
+           [
+             [~q(e), :eye_color, :blue],
+             [~q(not_equal), :eye_color, :green],
+             [~q(e), :eye_color, :gray]
+           ]},
+          [~q(e), :name, ~q(name)]
+        ]
+      }
+
+      db =
+        Db.new([
+          %{name: "Bill", eye_color: :blue},
+          %{name: "May", eye_color: :green},
+          %{name: "Millie", eye_color: :hazel},
+          %{name: "Murph", eye_color: :gray}
+        ])
+
+      assert_raise RuntimeError,
+                   "All :or expression variables must be the same. Non-matching clauses are: [%{{:var, :e} => :e}, %{{:var, :not_equal} => :e}]",
+                   fn ->
+                     Db.query(db, query)
+                   end
+    end
+  end
 end

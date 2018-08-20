@@ -132,6 +132,57 @@ defmodule Elog.Query do
   end
 
   def to_relations(
+        %{find: _find, where: [{:or, [or1 | or_rest] = ors} = where | wheres]} =
+          q,
+        relations,
+        db,
+        relation_number
+      ) do
+    or1_symbols = compute_symbols(or1)
+    or_rest_symbols = Enum.map(or_rest, &compute_symbols/1)
+
+    or_expression_errors =
+      Enum.reduce(or_rest_symbols, [], fn syms, error_acc ->
+        if syms == or1_symbols do
+          error_acc
+        else
+          [syms | error_acc]
+        end
+      end)
+
+    unless Enum.empty?(or_expression_errors) do
+      raise "All :or expression variables must be the same. Non-matching clauses are: #{
+              inspect([or1_symbols | or_expression_errors])
+            }"
+    end
+
+    symbols = or1_symbols
+
+    vars =
+      symbols
+      |> Enum.map(fn {{:var, _var} = v, _} -> v end)
+      |> MapSet.new()
+
+    tuples =
+      Enum.flat_map(ors, fn this_or ->
+        this_or
+        |> filter_tuples(db)
+        |> datoms_to_tuples(symbols)
+      end)
+
+    relation = %{
+      vars: vars,
+      tuples: tuples,
+      where: ors,
+      relation_number: relation_number + 1
+    }
+
+    relations = [relation | relations]
+
+    dispatch_to_joins(relations, where, wheres, q, db, relation_number)
+  end
+
+  def to_relations(
         %{find: _find, where: [where | wheres]} = q,
         relations,
         db,
@@ -158,6 +209,10 @@ defmodule Elog.Query do
 
     relations = [relation | relations]
 
+    dispatch_to_joins(relations, where, wheres, q, db, relation_number)
+  end
+
+  defp dispatch_to_joins(relations, where, wheres, q, db, relation_number) do
     case find_joins(relations) do
       :no_join ->
         to_relations(

@@ -8,7 +8,8 @@ defmodule Elog.Db do
   # [ ] functions in clauses
   # [x] built-in aggregates in finds
   # [ ] user-defined aggregates in finds
-  # [ ] conditionals
+  # [x] or
+  # [ ] and (within or)
   # [ ] wildcards, like: [~q(e), :name, _]
   # [ ] retractions
   # [ ] transaction log
