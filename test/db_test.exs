@@ -98,6 +98,18 @@ defmodule ElogDbTest do
                MapSet.new([%{e: 1, name: "Bill"}, %{e: 2, name: "Sandy"}])
     end
 
+    # test "all literals with join" do
+    #   query = %{
+    #     find: [~q(e), ~q(name)],
+    #     where: [[1, :name, "Bill"], [~q(e), :name, ~q(name)]]
+    #   }
+
+    #   db = Db.new([%{name: "Bill", age: 81}, %{name: "Red", age: 84}])
+    #   result = Db.query(db, query)
+
+    #   assert result == MapSet.new([])
+    # end
+
     test "double join" do
       query = %{
         find: [~q(e), ~q(e2), ~q(name), ~q(name2)],
