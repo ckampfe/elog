@@ -145,7 +145,8 @@ defmodule Elog.Query do
       |> MapSet.new()
 
     tuples =
-      filter_tuples(where, db)
+      where
+      |> filter_tuples(db)
       |> datoms_to_tuples(symbols)
 
     relation = %{
@@ -166,7 +167,7 @@ defmodule Elog.Query do
           relation_number + 1
         )
 
-      join_info ->
+      %{join_type: :normal} = join_info ->
         new_relations =
           join(join_info, relations, where, db, relation_number + 1)
 
@@ -258,15 +259,21 @@ defmodule Elog.Query do
   end
 
   # [e: literal, a: literal, v: literal]
-  defp filter_tuples([e, a, v], db) do
-    db
-    |> Enum.filter(fn tuple ->
-      tuple.a == a
+  defp filter_tuples([e, a, v], %{indexes: %{avet: avet}} = _db) do
+    avet
+    |> Index.get({a, v})
+    |> Enum.filter(fn datom(e: de) ->
+      de == e
     end)
-    |> Enum.filter(fn tuple ->
-      (var_match?(e, :e, tuple) || literal_match?(e, :e, tuple)) &&
-        (var_match?(v, a, tuple) || literal_match?(v, a, tuple))
-    end)
+
+    # db
+    # |> Enum.filter(fn tuple ->
+    #   tuple.a == a
+    # end)
+    # |> Enum.filter(fn tuple ->
+    #   (var_match?(e, :e, tuple) || literal_match?(e, :e, tuple)) &&
+    #     (var_match?(v, a, tuple) || literal_match?(v, a, tuple))
+    # end)
   end
 
   defp datoms_to_tuples(filtered_datoms, symbols) do
@@ -280,19 +287,19 @@ defmodule Elog.Query do
     |> MapSet.new()
   end
 
-  defp var_match?({:var, _} = _term, _lookup, _tuple), do: true
-  defp var_match?(_term, _lookup, _tuple), do: false
+  # defp var_match?({:var, _} = _term, _lookup, _tuple), do: true
+  # defp var_match?(_term, _lookup, _tuple), do: false
 
-  defp literal_match?(literal, field, tuple) do
-    %{a: tuple_attribute} = tuple
+  # defp literal_match?(literal, field, tuple) do
+  #   %{a: tuple_attribute} = tuple
 
-    if tuple_attribute == field do
-      %{v: tuple_value} = tuple
-      tuple_value == literal
-    else
-      false
-    end
-  end
+  #   if tuple_attribute == field do
+  #     %{v: tuple_value} = tuple
+  #     tuple_value == literal
+  #   else
+  #     false
+  #   end
+  # end
 
   defp find_joins([%{vars: vars} = _rel | _rels] = relations) do
     relations_graphs = relations_graph(relations)
@@ -320,12 +327,18 @@ defmodule Elog.Query do
 
       if diff == MapSet.new() do
         %{
+          join_type: :normal,
           left: Enum.take(union, 1) |> MapSet.new(),
           right: union |> Enum.drop(1) |> Enum.take(1) |> MapSet.new(),
           join_vars: join_vars
         }
       else
-        %{left: intersection, right: diff, join_vars: join_vars}
+        %{
+          join_type: :normal,
+          left: intersection,
+          right: diff,
+          join_vars: join_vars
+        }
       end
     end
   end
@@ -365,14 +378,11 @@ defmodule Elog.Query do
         relations
       end
 
-    # {products, products_cardinality} = cartesian_product(xpro_relations)
-
     [%{vars: left_vars}, %{vars: right_vars}] = xpro_relations
 
     jvs = join_vars |> MapSet.new()
 
     {:var, lvar} =
-      _left_var =
       left_vars
       |> Enum.filter(fn {:var, _var} = jv ->
         MapSet.member?(jvs, jv)
@@ -380,7 +390,6 @@ defmodule Elog.Query do
       |> List.first()
 
     {:var, rvar} =
-      _right_var =
       right_vars
       |> Enum.filter(fn {:var, _var} = jv ->
         MapSet.member?(jvs, jv)
@@ -391,9 +400,9 @@ defmodule Elog.Query do
 
     compound_join_key =
       if right_count >= 1 do
-        fn {left_rel, right_rel} ->
-          %{^rvar => rvar_value} = right_rel
-          %{^lvar => lvar_value} = left_rel
+        fn xpro_rel ->
+          %{^rvar => rvar_value,
+            ^lvar => lvar_value} = xpro_rel
 
           %{
             rvar => rvar_value,
@@ -401,8 +410,9 @@ defmodule Elog.Query do
           }
         end
       else
-        fn {left_rel, _right_rel} ->
-          %{^lvar => lvar_value} = left_rel
+        fn xpro_rel ->
+          %{^lvar => lvar_value} = xpro_rel
+
           %{lvar => lvar_value}
         end
       end
@@ -440,19 +450,6 @@ defmodule Elog.Query do
     #########################
 
     [%{tuples: lt}, %{tuples: rt}] = xpro_relations
-    # r1_valset =
-    #   lt
-    #   |> Enum.map(fn tuple ->
-    #     Map.fetch!(tuple, lvar)
-    #   end)
-    #   |> MapSet.new()
-
-    # r2_valset =
-    #   rt
-    #   |> Enum.map(fn tuple ->
-    #     Map.fetch!(tuple, rvar)
-    #   end)
-    #   |> MapSet.new()
 
     r3_r1_valset =
       Task.async(fn ->
@@ -494,31 +491,12 @@ defmodule Elog.Query do
         end)
       end)
 
-    # IO.inspect(left_join_key_syms, label: "ljks")
-    # IO.inspect(r1_valset, label: "r1set")
-    # IO.inspect(r2_valset, label: "r2set")
-    # IO.inspect(r3_r1_valset, label: "r3r1set")
-
-    # IO.inspect(lt, label: "r1 original")
-    # IO.inspect(r1_filtered_set, label: "r1 filtered")
     r1_filtered_set = Task.await(r1_filtered_set)
-    r2_filtered_set = Task.await(r2_filtered_set)
-    # Logger.debug("r1 diff: #{Enum.count(lt) - Enum.count(r1_filtered_set)}")
 
-    # IO.inspect(rt, label: "r2 original")
-    # IO.inspect(r2_filtered_set, label: "r2 filtered")
-    # Logger.debug("r2 diff: #{Enum.count(rt) - Enum.count(r2_filtered_set)}")
+    r2_filtered_set = Task.await(r2_filtered_set)
 
     {products, products_cardinality} =
       cartesian_product([%{tuples: r1_filtered_set}, %{tuples: r2_filtered_set}])
-
-    # Logger.debug("filtered card prod ratio = #{products_cardinality / (Enum.count(lt) * Enum.count(rt))}:1")
-
-    # IO.inspect(products, label: "products")
-
-    # # if right_count >= 1  do
-    # #   IO.inspect(r3_r2_valset, label: "r3r2set")
-    # # end
 
     #########################
 
@@ -529,15 +507,8 @@ defmodule Elog.Query do
         {products, products_cardinality, compound_join_key}
       )
       |> Enum.map(fn
-        {{prod_l, prod_r}, r} ->
-          Enum.reduce([prod_l, prod_r, r], %{}, fn rel, acc ->
-            Map.merge(acc, rel)
-          end)
-
-        {r, {prod_l, prod_r}} ->
-          Enum.reduce([prod_l, prod_r, r], %{}, fn rel, acc ->
-            Map.merge(acc, rel)
-          end)
+        {l, r} ->
+          Map.merge(l, r)
       end)
       |> MapSet.new()
 
@@ -570,18 +541,12 @@ defmodule Elog.Query do
        ]) do
     products =
       for tuple1 <- rel_tuples1,
-          tuple2 <- rel_tuples2,
-          tuple1 != tuple2 do
-        {tuple1, tuple2}
+          tuple2 <- rel_tuples2 do
+        Map.merge(tuple2, tuple1)
       end
+      |> MapSet.new()
 
-    # Stream.flat_map(rel_tuples1, fn tuple1 ->
-    #   Stream.map(rel_tuples2, fn tuple2 ->
-    #     {tuple1, tuple2}
-    #   end)
-    # end)
-
-    cardinality = Enum.count(rel_tuples1) * Enum.count(rel_tuples2)
+    cardinality = Enum.count(products)
 
     {products, cardinality}
   end
