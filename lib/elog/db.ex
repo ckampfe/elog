@@ -13,6 +13,7 @@ defmodule Elog.Db do
   # [ ] wildcards, like: [~q(e), :name, _]
   # [ ] retractions
   # [ ] transaction log
+  # [ ] parameterized queries (investigate `with` clause?)
 
   defstruct active_indexes: MapSet.new(), indexes: %{}, current_entity_id: 1
 
