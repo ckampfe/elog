@@ -132,6 +132,39 @@ defmodule Elog.Query do
   end
 
   def to_relations(
+        %{
+          find: _find,
+          where: [{:not, [not_clause | _not_rest] = nots} = where | wheres]
+        } = q,
+        relations,
+        db,
+        relation_number
+      ) do
+    not_symbols = compute_symbols(not_clause)
+    symbols = not_symbols
+
+    vars =
+      symbols
+      |> Enum.map(fn {{:var, _var} = v, _} -> v end)
+      |> MapSet.new()
+
+    tuples =
+      to_relations(Map.put(q, :where, nots), db)
+      |> Map.fetch!(:tuples)
+
+    relation = %{
+      vars: vars,
+      tuples: tuples,
+      where: not_clause,
+      relation_number: relation_number + 1
+    }
+
+    relations = [relation | relations]
+
+    dispatch_to_joins(relations, where, wheres, q, db, relation_number)
+  end
+
+  def to_relations(
         %{find: _find, where: [{:or, [or1 | or_rest] = ors} = where | wheres]} =
           q,
         relations,
@@ -213,7 +246,7 @@ defmodule Elog.Query do
   end
 
   defp dispatch_to_joins(relations, where, wheres, q, db, relation_number) do
-    case find_joins(relations) do
+    case find_joins(relations, where) do
       :no_join ->
         to_relations(
           Map.put(q, :where, wheres),
@@ -232,7 +265,22 @@ defmodule Elog.Query do
           db,
           relation_number + 1
         )
+
+      %{join_type: :anti} = join_info ->
+        new_relations =
+          join(join_info, relations, where, db, relation_number + 1)
+
+        to_relations(
+          Map.put(q, :where, wheres),
+          new_relations,
+          db,
+          relation_number + 1
+        )
     end
+  end
+
+  defp compute_symbols({:or, ors}) do
+    Enum.flat_map(ors, &compute_symbols/1)
   end
 
   defp compute_symbols(where) do
@@ -356,7 +404,7 @@ defmodule Elog.Query do
   #   end
   # end
 
-  defp find_joins([%{vars: vars} = _rel | _rels] = relations) do
+  defp find_joins([%{vars: vars} = _rel | _rels] = relations, where) do
     relations_graphs = relations_graph(relations)
 
     join_vars =
@@ -380,20 +428,29 @@ defmodule Elog.Query do
 
       diff = MapSet.difference(union, intersection)
 
-      if diff == MapSet.new() do
-        %{
-          join_type: :normal,
-          left: Enum.take(union, 1) |> MapSet.new(),
-          right: union |> Enum.drop(1) |> Enum.take(1) |> MapSet.new(),
-          join_vars: join_vars
-        }
-      else
-        %{
-          join_type: :normal,
-          left: intersection,
-          right: diff,
-          join_vars: join_vars
-        }
+      join_info =
+        if diff == MapSet.new() do
+          %{
+            join_type: :normal,
+            left: Enum.take(union, 1) |> MapSet.new(),
+            right: union |> Enum.drop(1) |> Enum.take(1) |> MapSet.new(),
+            join_vars: join_vars
+          }
+        else
+          %{
+            join_type: :normal,
+            left: intersection,
+            right: diff,
+            join_vars: join_vars
+          }
+        end
+
+      case where do
+        {:not, _} ->
+          Map.put(join_info, :join_type, :anti)
+
+        _ ->
+          join_info
       end
     end
   end
@@ -417,7 +474,7 @@ defmodule Elog.Query do
 
   # "and now for the tricky bit"
   defp join(
-         %{left: left, right: right, join_vars: join_vars} = _join_info,
+         %{left: left, right: right, join_vars: join_vars} = join_info,
          relations,
          where,
          _db,
@@ -555,16 +612,34 @@ defmodule Elog.Query do
     #########################
 
     new_tuples =
-      Elog.Db.hash_join(
-        {left_relation[:tuples], Enum.count(left_relation[:tuples]),
-         left_join_key},
-        {products, products_cardinality, compound_join_key}
-      )
-      |> Enum.map(fn
-        {l, r} ->
-          Map.merge(l, r)
-      end)
-      |> MapSet.new()
+      case join_info[:join_type] do
+        :anti ->
+          Elog.Db.hash_anti_join(
+            {left_relation[:tuples], Enum.count(left_relation[:tuples]),
+             left_join_key},
+            {products, products_cardinality, compound_join_key}
+          )
+          |> Enum.map(fn
+            {l, r} = _t ->
+              Map.merge(l, r)
+
+            t ->
+              t
+          end)
+          |> MapSet.new()
+
+        :normal ->
+          Elog.Db.hash_join(
+            {left_relation[:tuples], Enum.count(left_relation[:tuples]),
+             left_join_key},
+            {products, products_cardinality, compound_join_key}
+          )
+          |> Enum.map(fn
+            {l, r} ->
+              Map.merge(l, r)
+          end)
+          |> MapSet.new()
+      end
 
     new_vars =
       new_tuples

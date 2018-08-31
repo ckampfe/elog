@@ -271,6 +271,58 @@ defmodule ElogDbTest do
     end
   end
 
+  describe "negation" do
+    test "simple negation" do
+      db = Db.new()
+      db = Db.transact(db, [%{name: "Bill"}, %{name: "Jamie"}])
+
+      result =
+        Db.query(db, %{
+          find: [~q(e), ~q(name)],
+          where: [
+            [~q(e), :name, ~q(name)],
+            {:not, [[~q(e), :name, "Bill"], [~q(e), :name, ~q(name)]]}
+          ]
+        })
+
+      assert db.current_entity_id == 3
+      assert result == MapSet.new([%{e: 2, name: "Jamie"}])
+    end
+
+    test "negation with nested or" do
+      db = Db.new()
+
+      db =
+        Db.transact(db, [
+          %{name: "Bill"},
+          %{name: "Jamie"},
+          %{name: "Ron"},
+          %{name: "Johnny"}
+        ])
+
+      result =
+        Db.query(db, %{
+          find: [~q(e), ~q(name)],
+          where: [
+            [~q(e), :name, ~q(name)],
+            {:not,
+             [
+               {:or,
+                [
+                  [~q(e), :name, "Bill"],
+                  [~q(e), :name, "Johnny"],
+                  [~q(e), :name, "Jamie"]
+                ]},
+               [~q(e), :name, ~q(name)]
+             ]}
+          ]
+        })
+
+      assert db.current_entity_id == 5
+      assert result == MapSet.new([%{e: 3, name: "Ron"}])
+    end
+  end
+
   describe "conditionals" do
     test "or working" do
       query = %{

@@ -4,7 +4,7 @@ defmodule Elog.Db do
   require Logger
 
   # TODO:
-  # [ ] negation
+  # [x] negation
   # [ ] functions in clauses
   # [x] built-in aggregates in finds
   # [ ] user-defined aggregates in finds
@@ -352,6 +352,46 @@ defmodule Elog.Db do
           Enum.reduce(match_rows, acc, fn v, acc2 ->
             [{row, v} | acc2]
           end)
+      end
+    end)
+  end
+
+  def hash_anti_join(
+        {_r1_tuples, r1_cardinality, r1_f} = rel1,
+        {_r2_tuples, r2_cardinality, r2_f} = rel2
+      )
+      when is_function(r1_f) and is_function(r2_f) do
+    {{l_tuples, _l_tuples_cardinality, lf} = _larger_relation,
+     {s_tuples, _r_tuples_cardinality, sf} = _smaller_relation} =
+      if r1_cardinality >= r2_cardinality do
+        {rel1, rel2}
+      else
+        {rel2, rel1}
+      end
+
+    hashed_smaller =
+      Enum.reduce(s_tuples, %{}, fn row, acc ->
+        join_attr_value = sf.(row)
+
+        {_, rows} =
+          Map.get_and_update(acc, join_attr_value, fn
+            nil ->
+              {nil, [row]}
+
+            existing ->
+              {nil, [row | existing]}
+          end)
+
+        rows
+      end)
+
+    Enum.reduce(l_tuples, [], fn row, acc ->
+      case Map.get(hashed_smaller, lf.(row)) do
+        nil ->
+          [row | acc]
+
+        _ ->
+          acc
       end
     end)
   end
