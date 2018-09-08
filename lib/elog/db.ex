@@ -15,6 +15,7 @@ defmodule Elog.Db do
   # [ ] retractions
   # [ ] transaction log
   # [ ] parameterized queries (investigate `with` clause?)
+  # [x] test all variants of `where` clauses
 
   defstruct active_indexes: MapSet.new(), indexes: %{}, current_entity_id: 1
 
