@@ -512,8 +512,9 @@ defmodule Elog.Query do
 
     compound_join_key =
       if right_count >= 1 do
-        fn xpro_rel ->
-          %{^rvar => rvar_value, ^lvar => lvar_value} = xpro_rel
+        fn {l, r} ->
+          %{^lvar => lvar_value} = l
+          %{^rvar => rvar_value} = r
 
           %{
             rvar => rvar_value,
@@ -521,8 +522,8 @@ defmodule Elog.Query do
           }
         end
       else
-        fn xpro_rel ->
-          %{^lvar => lvar_value} = xpro_rel
+        fn {l, _r} ->
+          %{^lvar => lvar_value} = l
 
           %{lvar => lvar_value}
         end
@@ -591,8 +592,15 @@ defmodule Elog.Query do
             {products, products_cardinality, compound_join_key}
           )
           |> Enum.map(fn
-            {l, r} ->
-              Map.merge(l, r)
+            {{c1, c2}, r} ->
+              Enum.reduce([c1, c2, r], %{}, fn val, acc ->
+                Map.merge(acc, val)
+              end)
+
+            {l, {c1, c2}} ->
+              Enum.reduce([c1, c2, l], %{}, fn val, acc ->
+                Map.merge(acc, val)
+              end)
           end)
           |> MapSet.new()
       end
@@ -627,7 +635,7 @@ defmodule Elog.Query do
     products =
       for tuple1 <- rel_tuples1,
           tuple2 <- rel_tuples2 do
-        Map.merge(tuple2, tuple1)
+        {tuple1, tuple2}
       end
       |> MapSet.new()
 
