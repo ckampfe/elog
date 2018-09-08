@@ -112,7 +112,7 @@ defmodule ElogDbTest do
     # end
 
     test "double join" do
-      all_permutations(
+      test_permutations(
         [
           [~q(e), :name, ~q(name)],
           [~q(e2), :name, ~q(name2)],
@@ -141,7 +141,7 @@ defmodule ElogDbTest do
     end
 
     test "direct join" do
-      all_permutations(
+      test_permutations(
         [[~q(e), :name, ~q(name)], [~q(e2), :name, ~q(name)]],
         fn variant ->
           query = %{
@@ -164,7 +164,7 @@ defmodule ElogDbTest do
     end
 
     test "more direct joins" do
-      all_permutations(
+      test_permutations(
         [
           [~q(e), :name, ~q(name)],
           [~q(e), :age, ~q(age)],
@@ -204,7 +204,7 @@ defmodule ElogDbTest do
     end
 
     test "literal with var" do
-      all_permutations(
+      test_permutations(
         [[~q(e), :name, "Marsha"], [~q(e), :name, ~q(name)]],
         fn variant ->
           query = %{
@@ -221,7 +221,7 @@ defmodule ElogDbTest do
     end
 
     test "two literals with vars" do
-      all_permutations(
+      test_permutations(
         [
           [~q(e), :name, "Marsha"],
           [~q(e), :eye_color, "Blue"],
@@ -385,8 +385,8 @@ defmodule ElogDbTest do
         [~q(e), :eye_color, :gray]
       ]
 
-      all_permutations(ors, fn or_variant ->
-        all_permutations(
+      test_permutations(ors, fn or_variant ->
+        test_permutations(
           [
             [~q(e), :name, ~q(name)],
             {:or, or_variant},
@@ -426,8 +426,8 @@ defmodule ElogDbTest do
         [~q(e), :eye_color, :gray]
       ]
 
-      all_permutations(ors, fn or_variant ->
-        all_permutations(
+      test_permutations(ors, fn or_variant ->
+        test_permutations(
           [
             {:or, or_variant},
             [~q(e), :name, ~q(name)]

@@ -52,7 +52,7 @@ defmodule ElogDbAggregatesTest do
     end
 
     test "it does sum with rename" do
-      all_permutations(
+      test_permutations(
         [
           [~q(e), :name, ~q(name)],
           [~q(e), :age, ~q(age)]
@@ -83,7 +83,7 @@ defmodule ElogDbAggregatesTest do
     end
 
     test "it does sum with no rename" do
-      all_permutations(
+      test_permutations(
         [
           [~q(e), :name, ~q(name)],
           [~q(e), :age, ~q(age)]
@@ -114,7 +114,7 @@ defmodule ElogDbAggregatesTest do
     end
 
     test "it does min with rename" do
-      all_permutations(
+      test_permutations(
         [
           [~q(e), :name, ~q(name)],
           [~q(e), :age, ~q(age)]
@@ -142,7 +142,7 @@ defmodule ElogDbAggregatesTest do
     end
 
     test "it does min with no rename" do
-      all_permutations(
+      test_permutations(
         [
           [~q(e), :name, ~q(name)],
           [~q(e), :age, ~q(age)]
@@ -170,7 +170,7 @@ defmodule ElogDbAggregatesTest do
     end
 
     test "it does max with rename" do
-      all_permutations(
+      test_permutations(
         [
           [~q(e), :name, ~q(name)],
           [~q(e), :age, ~q(age)]
@@ -198,7 +198,7 @@ defmodule ElogDbAggregatesTest do
     end
 
     test "it does max with no rename" do
-      all_permutations(
+      test_permutations(
         [
           [~q(e), :name, ~q(name)],
           [~q(e), :age, ~q(age)]
@@ -226,7 +226,7 @@ defmodule ElogDbAggregatesTest do
     end
 
     test "it does averages with no rename" do
-      all_permutations(
+      test_permutations(
         [
           [~q(e), :age, ~q(age)],
           [~q(e), :name, ~q(name)]
@@ -254,7 +254,7 @@ defmodule ElogDbAggregatesTest do
     end
 
     test "it does averages with rename" do
-      all_permutations(
+      test_permutations(
         [
           [~q(e), :age, ~q(age)],
           [~q(e), :name, ~q(name)]
@@ -287,7 +287,7 @@ defmodule ElogDbAggregatesTest do
 
   describe "multiple aggregates" do
     test "multiple aggregates" do
-      all_permutations(
+      test_permutations(
         [
           [~q(e), :age, ~q(age)],
           [~q(e), :name, ~q(name)]
@@ -333,7 +333,7 @@ defmodule ElogDbAggregatesTest do
     end
 
     test "multiple group by variables" do
-      all_permutations(
+      test_permutations(
         [
           [~q(e), :age, ~q(age)],
           [~q(e), :day, ~q(day)],
