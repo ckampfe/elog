@@ -8,6 +8,7 @@ defmodule Elog.Query do
   require Logger
   alias Elog.Db.Index
   import Elog.Datom
+  alias BiMultiMap, as: Multimap
 
   @datom_schema_eavt [:e, :a, :v, :t]
   @datom_to_record_map %{e: 1, a: 2, v: 3, t: 4}
@@ -301,8 +302,7 @@ defmodule Elog.Query do
          %{indexes: %{aevt: aevt}} = _db
        ) do
     aevt.data
-    |> Map.values()
-    |> Enum.flat_map(fn datoms -> datoms end)
+    |> Multimap.values()
   end
 
   # [e: literal, a: var]

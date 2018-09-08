@@ -23,6 +23,7 @@ defmodule Elog.MixProject do
   defp deps do
     [
       {:strand, "~> 0.5"},
+      {:bimap, "~> 1.0"},
       {:benchee, "~> 0.13.2", only: :dev}
     ]
   end

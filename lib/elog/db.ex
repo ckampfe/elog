@@ -1,6 +1,7 @@
 defmodule Elog.Db do
   import Elog.Datom
   alias Elog.Query
+  alias BiMultiMap, as: Multimap
   require Logger
 
   # TODO:
@@ -49,12 +50,12 @@ defmodule Elog.Db do
     # here we are.
     ids =
       idx[:eavt].data
-      |> Map.keys()
+      |> Multimap.keys()
 
     current_entity_id =
       case ids do
         [] ->
-          1
+          0
 
         _ ->
           Enum.max(ids)
@@ -92,15 +93,15 @@ defmodule Elog.Db do
   end
 
   defmodule EAVT do
-    defstruct data: %{}
+    defstruct data: Multimap.new()
   end
 
   defmodule AEVT do
-    defstruct data: %{}
+    defstruct data: Multimap.new()
   end
 
   defmodule AVET do
-    defstruct data: %{}
+    defstruct data: Multimap.new()
   end
 
   defimpl Index, for: EAVT do
@@ -109,42 +110,36 @@ defmodule Elog.Db do
     end
 
     def get(%{data: data}, entity_id, default) do
-      Map.get(data, entity_id, default)
+      Multimap.get(data, entity_id, default)
     end
 
     def insert(%{data: data} = this, datom) do
       e = datom(datom, :e)
 
-      {_, new_data} =
-        Map.get_and_update(data, e, fn
-          nil ->
-            {nil, [datom]}
-
-          old ->
-            {nil, [datom | old]}
-        end)
+      new_data = Multimap.put(data, e, datom)
 
       %{this | data: new_data}
     end
 
     def put(%{data: data} = this, datom) do
       e = datom(datom, :e)
+      a = datom(datom, :e)
 
-      {_, new_data} =
-        Map.get_and_update(data, e, fn
-          nil ->
-            {nil, [datom]}
-
-          old ->
-            filtered_olds =
-              Enum.reject(old, fn datom(a: this_a) ->
-                datom(datom, :a) == this_a
-              end)
-
-            {nil, [datom | filtered_olds]}
+      filtered =
+        data
+        |> Multimap.get(e)
+        |> Enum.reject(fn
+          datom(a: this_a) ->
+            a == this_a
         end)
 
-      %{this | data: new_data}
+      new_data = Multimap.delete_key(data, e)
+
+      filtered
+      |> Enum.reduce(%{this | data: new_data}, fn d, acc ->
+        Index.insert(acc, d)
+      end)
+      |> Index.insert(datom)
     end
   end
 
@@ -154,42 +149,35 @@ defmodule Elog.Db do
     end
 
     def get(%{data: data}, attribute_name, default) do
-      Map.get(data, attribute_name, default)
+      Multimap.get(data, attribute_name, default)
     end
 
     def insert(%{data: data} = this, datom) do
       a = datom(datom, :a)
 
-      {_, new_data} =
-        Map.get_and_update(data, a, fn
-          nil ->
-            {nil, [datom]}
-
-          old ->
-            {nil, [datom | old]}
-        end)
+      new_data = Multimap.put(data, a, datom)
 
       %{this | data: new_data}
     end
 
-    def put(this, datom) do
+    def put(%{data: data} = this, datom) do
       a = datom(datom, :a)
+      e = datom(datom, :e)
 
-      {_, new_data} =
-        Map.get_and_update(this.data, a, fn
-          nil ->
-            {nil, [datom]}
-
-          old ->
-            filtered_olds =
-              Enum.reject(old, fn datom(e: this_e) ->
-                datom(datom, :e) == this_e
-              end)
-
-            {nil, [datom | filtered_olds]}
+      filtered =
+        data
+        |> Multimap.get(a)
+        |> Enum.reject(fn datom(e: this_e) ->
+          e == this_e
         end)
 
-      %{this | data: new_data}
+      new_data = Multimap.delete_key(data, a)
+
+      filtered
+      |> Enum.reduce(%{this | data: new_data}, fn d, acc ->
+        Index.insert(acc, d)
+      end)
+      |> Index.insert(datom)
     end
   end
 
@@ -199,39 +187,44 @@ defmodule Elog.Db do
     end
 
     def get(%{data: data}, av, default) do
-      Map.get(data, av, default)
+      Multimap.get(data, av, default)
     end
 
     def insert(%{data: data} = this, datom) do
       av = {datom(datom, :a), datom(datom, :v)}
-
-      {_, new_data} =
-        Map.get_and_update(data, av, fn
-          nil ->
-            {nil, [datom]}
-
-          old ->
-            {nil, [datom | old]}
-        end)
-
+      new_data = Multimap.put(data, av, datom)
       %{this | data: new_data}
     end
 
     def put(%{data: data} = this, datom) do
       av = {datom(datom, :a), datom(datom, :v)}
 
-      {_, new_data} =
-        Map.get_and_update(data, av, fn
-          nil ->
-            {nil, [datom]}
+      datom_e = datom(datom, :e)
+      datom_t = datom(datom, :t)
 
-          old ->
-            filtered_olds =
-              Enum.reject(old, fn datom(e: this_e) ->
-                datom(datom, :e) == this_e
-              end)
+      to_remove =
+        data
+        |> Multimap.values()
+        |> Enum.filter(fn datom(e: this_e) ->
+          datom_e == this_e
+        end)
+        |> Enum.map(fn datom(a: this_a, v: this_v) ->
+          {this_a, this_v}
+        end)
+        |> Enum.flat_map(fn av ->
+          data
+          |> Multimap.get(av)
+          |> Enum.reject(fn datom(t: this_t) ->
+            datom_t == this_t
+          end)
+        end)
+        |> Enum.map(fn datom(a: this_a, v: this_v) ->
+          {this_a, this_v}
+        end)
 
-            {nil, filtered_olds}
+      new_data =
+        Enum.reduce(to_remove, Multimap.delete(data, av), fn av, acc ->
+          Multimap.delete_key(acc, av)
         end)
 
       Index.insert(%{this | data: new_data}, datom)
@@ -265,7 +258,7 @@ defmodule Elog.Db do
   end
 
   defp transact(db, [m | rest_of_maps], transaction_id, current_entity_id) do
-    entity_id = Map.get(m, :"elog/id", current_entity_id)
+    entity_id = Map.get(m, :"elog/id", current_entity_id + 1)
     datoms = to_datoms({m, entity_id}, transaction_id)
 
     indexes =
@@ -282,7 +275,11 @@ defmodule Elog.Db do
       %{db | indexes: indexes},
       rest_of_maps,
       transaction_id,
-      current_entity_id + 1
+      if entity_id == current_entity_id + 1 do
+        entity_id
+      else
+        current_entity_id
+      end
     )
   end
 
@@ -312,6 +309,7 @@ defmodule Elog.Db do
     Enum.map(map, fn {k, v} ->
       datom(e: entity_id, a: k, v: v, t: transaction_id)
     end)
+    |> MapSet.new()
   end
 
   def hash_join(
@@ -398,6 +396,12 @@ defmodule Elog.Db do
 end
 
 defimpl Inspect, for: Elog.Db do
+  alias BiMultiMap, as: Multimap
+
+  @spec inspect(
+          atom() | %{active_indexes: any(), indexes: nil | keyword() | map()},
+          any()
+        ) :: <<_::64, _::_*8>>
   def inspect(db, _options) do
     # this is probably really bad for large
     # indexes and dbs but that's ok for now
@@ -407,9 +411,10 @@ defimpl Inspect, for: Elog.Db do
     eavt = indexes[:eavt]
     eavt_data = eavt.data
 
+    # TODO: Fixme
     entities_count =
       eavt_data
-      |> Map.keys()
+      |> Multimap.keys()
       |> Enum.count()
 
     active_indexes =
