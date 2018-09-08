@@ -562,52 +562,8 @@ defmodule Elog.Query do
 
     [%{tuples: lt}, %{tuples: rt}] = xpro_relations
 
-    r3_r1_valset =
-      Task.async(fn ->
-        left_relation[:tuples]
-        |> Enum.map(fn tuple ->
-          Map.fetch!(tuple, lvar)
-        end)
-        |> MapSet.new()
-      end)
-
-    r3_r2_valset =
-      Task.async(fn ->
-        if right_count >= 1 do
-          left_relation[:tuples]
-          |> Enum.map(fn tuple ->
-            Map.fetch!(tuple, rvar)
-          end)
-          |> MapSet.new()
-        end
-      end)
-
-    r3_r1_valset = Task.await(r3_r1_valset)
-
-    r1_filtered_set =
-      Task.async(fn ->
-        lt
-        |> Enum.filter(fn %{^lvar => val} ->
-          MapSet.member?(r3_r1_valset, val)
-        end)
-      end)
-
-    r3_r2_valset = Task.await(r3_r2_valset)
-
-    r2_filtered_set =
-      Task.async(fn ->
-        rt
-        |> Enum.filter(fn %{^rvar => val} ->
-          MapSet.member?(r3_r2_valset, val)
-        end)
-      end)
-
-    r1_filtered_set = Task.await(r1_filtered_set)
-
-    r2_filtered_set = Task.await(r2_filtered_set)
-
     {products, products_cardinality} =
-      cartesian_product([%{tuples: r1_filtered_set}, %{tuples: r2_filtered_set}])
+      cartesian_product([%{tuples: lt}, %{tuples: rt}])
 
     #########################
 
