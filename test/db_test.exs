@@ -287,6 +287,42 @@ defmodule ElogDbTest do
         end
       )
     end
+
+    test "wildcard properly ignores fields in a find *" do
+      test_permutations(
+        [
+          [~q(e), :name, "Bill"],
+          [~q(e2), :friend_id, ~q(e)],
+          [~q(e2), :favorite_color, :_],
+          [~q(e2), :name, :_]
+        ],
+        fn variant ->
+          data = [
+            %{name: "Bill"},
+            %{name: "Sue", friend_id: 1},
+            %{name: "Johnny", friend_id: 1, favorite_color: :blue},
+            %{name: "Juan", friend_id: 1},
+            %{not_a_name: "ok", friend_id: 1, favorite_color: :green},
+            %{name: "Megan", friend_id: 1, favorite_color: :red}
+          ]
+
+          # find friends of Bill's, with names, who have a favorite color,
+          # but ignore what that color is
+          query = %{find: [:*], where: variant}
+
+          db = Db.new(data)
+          result = Db.query(db, query)
+
+          keys =
+            Enum.reduce(result, MapSet.new(), fn row, acc ->
+              keyset = Map.keys(row) |> MapSet.new()
+              MapSet.union(acc, keyset)
+            end)
+
+          assert keys == MapSet.new([:e, :e2])
+        end
+      )
+    end
   end
 
   describe "transact" do
