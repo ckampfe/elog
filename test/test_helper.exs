@@ -5,12 +5,12 @@ ExUnit.start()
 defmodule TestHelper do
   def test_permutations(variants, f)
       when is_list(variants) and is_function(f) do
-    :ets.update_counter(:test_stats, :total_tests, {2, 1}, {:total_tests, 0})
+    :ets.update_counter(:test_stats, :total_tests, 1, {:total_tests, 0})
 
     permutations = permutations(variants)
 
     Enum.each(permutations, fn variant ->
-      :ets.update_counter(:test_stats, :total_permutations, {2, 1}, {:total_permutations, 0})
+      :ets.update_counter(:test_stats, :total_permutations, 1, {:total_permutations, 0})
       f.(variant)
     end)
   end
