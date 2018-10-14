@@ -8,6 +8,7 @@ defmodule Elog.Query do
   require Logger
   alias Elog.Db.Index
   import Elog.Datom
+  alias Elog.Relation
   alias BiMultiMap, as: Multimap
 
   @datom_schema_eavt [:e, :a, :v, :t]
@@ -20,13 +21,57 @@ defmodule Elog.Query do
     q
   end
 
-  def extract_finds(%{tuples: _tuples, vars: vars} = rel, [:*]) do
+  # @precedence_table %{not: 1}
+
+  # def reorder_wheres(%{where: where} = q) do
+  #   new_wheres =
+  #     Enum.sort(where, fn
+  #       {t1, _}, {t2, _} ->
+  #         Map.get(@precedence_table, t1, 0) >= Map.get(@precedence_table, t2, 0)
+
+  #       {t1, _}, _w2 ->
+  #         Map.get(@precedence_table, t1, 0) >= 0
+
+  #       _w1, {t2, _} ->
+  #         0 >= Map.get(@precedence_table, t2, 0)
+
+  #       [{:var, _}, _, {:var, _}], [{:var, _}, _, {:var, _}] ->
+  #         true
+
+  #       [{:var, _}, _, {:var, _}], [{:var, _}, _, _] ->
+  #         false
+
+  #       [{:var, _}, _, _], [{:var, _}, _, {:var, _}] ->
+  #         true
+
+  #       [{:var, _}, _, _], [{:var, _}, _, _] ->
+  #         true
+
+  #       [{:var, _}, _, _], [_, _, _] ->
+  #         false
+
+  #       [_, _, _], [{:var, _}, _, _] ->
+  #         true
+
+  #       [{:var, _}, _, {:var, _}], _ ->
+  #         false
+
+  #       _, [{:var, _}, _, {:var, _}] ->
+  #         true
+
+  #       _, _ ->
+  #         false
+  #     end)
+
+  #   Map.put(q, :where, new_wheres)
+  # end
+
+  def extract_finds(%{vars: vars} = rel, [:*]) do
     extract_finds(rel, vars)
   end
 
   def extract_finds(%{tuples: tuples}, find) do
-    tuples
-    |> Enum.map(fn tuple ->
+    Enum.map(tuples, fn tuple ->
       Enum.reduce(find, %{}, fn
         {_, {:var, var}, _rename}, acc ->
           %{^var => val} = tuple
@@ -58,16 +103,14 @@ defmodule Elog.Query do
         Enum.map(grouped, fn {gkey, gdata} ->
           Enum.reduce(aggregates, %{}, fn
             {agg_op, {:var, agg_field}, rename}, acc ->
-              gdata_fields =
-                Enum.map(gdata, fn t -> Map.fetch!(t, agg_field) end)
+              gdata_fields = Enum.map(gdata, fn t -> Map.fetch!(t, agg_field) end)
 
               agg_return = apply(__MODULE__, agg_op, [gdata_fields])
 
               Map.put(acc, rename, agg_return)
 
             {agg_op, {:var, agg_field}}, acc ->
-              gdata_fields =
-                Enum.map(gdata, fn t -> Map.fetch!(t, agg_field) end)
+              gdata_fields = Enum.map(gdata, fn t -> Map.fetch!(t, agg_field) end)
 
               agg_return = apply(__MODULE__, agg_op, [gdata_fields])
 
@@ -133,8 +176,7 @@ defmodule Elog.Query do
   end
 
   def to_relations(
-        %{find: _find, where: [{:or, [or1 | or_rest] = ors} = where | wheres]} =
-          q,
+        %{find: _find, where: [{:or, [or1 | or_rest] = ors} = where | wheres]} = q,
         relations,
         db,
         relation_number
@@ -171,11 +213,11 @@ defmodule Elog.Query do
         |> datoms_to_tuples(symbols)
       end)
 
-    relation = %{
+    relation = %Relation{
       vars: vars,
       tuples: tuples,
       where: ors,
-      relation_number: relation_number + 1
+      number: relation_number + 1
     }
 
     relations = [relation | relations]
@@ -201,11 +243,11 @@ defmodule Elog.Query do
       |> filter_tuples(db)
       |> datoms_to_tuples(symbols)
 
-    relation = %{
+    relation = %Relation{
       vars: vars,
       tuples: tuples,
       where: where,
-      relation_number: relation_number + 1
+      number: relation_number + 1
     }
 
     relations = [relation | relations]
@@ -224,8 +266,7 @@ defmodule Elog.Query do
         )
 
       %{join_type: :normal} = join_info ->
-        new_relations =
-          join(join_info, relations, where, db, relation_number + 1)
+        new_relations = join(join_info, relations, where, db, relation_number + 1)
 
         to_relations(
           Map.put(q, :where, wheres),
@@ -291,6 +332,18 @@ defmodule Elog.Query do
          [{:var, _evar} = _e, a, {:var, _vvar} = _v],
          %{indexes: %{aevt: aevt}} = _db
        ) do
+    Index.get(aevt, a)
+  end
+
+  defp filter_tuples(
+         [{:var, _evar} = _e, a, :_],
+         %{indexes: %{aevt: aevt}} = _db
+       ) do
+    Index.get(aevt, a)
+  end
+
+  # [e: wildcard, a: literal, v: var]
+  defp filter_tuples([:_, a, {:var, _vvar}], %{indexes: %{aevt: aevt}} = _db) do
     Index.get(aevt, a)
   end
 
@@ -360,7 +413,7 @@ defmodule Elog.Query do
   #   end
   # end
 
-  defp find_joins([%{vars: vars} = _rel | _rels] = relations, _where) do
+  defp find_joins([%Relation{vars: vars} = _rel | _rels] = relations, _where) do
     relations_graphs = relations_graph(relations)
 
     join_vars =
@@ -377,28 +430,28 @@ defmodule Elog.Query do
       :no_join
     else
       sets = Map.values(variable_node_sets)
+
       union = Enum.reduce(sets, fn val, acc -> MapSet.union(val, acc) end)
 
-      intersection =
-        Enum.reduce(sets, fn val, acc -> MapSet.intersection(val, acc) end)
+      intersection = Enum.reduce(sets, fn val, acc -> MapSet.intersection(val, acc) end)
 
       diff = MapSet.difference(union, intersection)
 
-        if diff == MapSet.new() do
-          %{
-            join_type: :normal,
-            left: Enum.take(union, 1) |> MapSet.new(),
-            right: union |> Enum.drop(1) |> Enum.take(1) |> MapSet.new(),
-            join_vars: join_vars
-          }
-        else
-          %{
-            join_type: :normal,
-            left: intersection,
-            right: diff,
-            join_vars: join_vars
-          }
-        end
+      if diff == MapSet.new() do
+        %{
+          join_type: :normal,
+          left: Enum.take(union, 1) |> MapSet.new(),
+          right: union |> Enum.drop(1) |> Enum.take(1) |> MapSet.new(),
+          join_vars: join_vars
+        }
+      else
+        %{
+          join_type: :normal,
+          left: intersection,
+          right: diff,
+          join_vars: join_vars
+        }
+      end
     end
   end
 
@@ -406,7 +459,7 @@ defmodule Elog.Query do
     Enum.reduce(
       relations,
       %{},
-      fn %{vars: vars, relation_number: relation_number}, acc ->
+      fn %{vars: vars, number: relation_number}, acc ->
         s =
           vars
           |> Enum.map(fn {:var, var} ->
@@ -419,62 +472,16 @@ defmodule Elog.Query do
     )
   end
 
-  # "and now for the tricky bit"
-  defp join(
+  defp direct_join(
          %{left: left, right: right, join_vars: join_vars} = join_info,
          relations,
          where,
          _db,
          relation_number
        ) do
-    xpro_relations =
-      if Enum.count(right) > 1 do
-        relations
-        |> Enum.filter(fn %{relation_number: relation_number} ->
-          MapSet.member?(right, relation_number)
-        end)
-      else
-        relations
-      end
+    xpro_relations = relations
 
-    [%{vars: left_vars}, %{vars: right_vars}] = xpro_relations
-
-    jvs = join_vars |> MapSet.new()
-
-    {:var, lvar} =
-      left_vars
-      |> Enum.filter(fn {:var, _var} = jv ->
-        MapSet.member?(jvs, jv)
-      end)
-      |> List.first()
-
-    {:var, rvar} =
-      right_vars
-      |> Enum.filter(fn {:var, _var} = jv ->
-        MapSet.member?(jvs, jv)
-      end)
-      |> List.first()
-
-    right_count = Enum.count(right)
-
-    compound_join_key =
-      if right_count >= 1 do
-        fn {l, r} ->
-          %{^lvar => lvar_value} = l
-          %{^rvar => rvar_value} = r
-
-          %{
-            rvar => rvar_value,
-            lvar => lvar_value
-          }
-        end
-      else
-        fn {l, _r} ->
-          %{^lvar => lvar_value} = l
-
-          %{lvar => lvar_value}
-        end
-      end
+    join_vars = join_vars |> MapSet.new()
 
     left_relation_number =
       left
@@ -487,18 +494,27 @@ defmodule Elog.Query do
       |> List.first()
 
     left_relation =
-      relations
-      |> Enum.filter(fn %{relation_number: relation_number} ->
+      Enum.find(relations, fn %Relation{number: relation_number} ->
         relation_number == left_relation_number
+      end)
+
+    right_relation =
+      Enum.find(relations, fn %Relation{number: relation_number} ->
+        relation_number == right_relation_number
+      end)
+
+    {:var, lvar} =
+      left_relation.vars
+      |> Enum.filter(fn {:var, _var} = join_var ->
+        MapSet.member?(join_vars, join_var)
       end)
       |> List.first()
 
-    left_join_key_syms =
-      if right_count > 1 do
-        left_relation[:vars]
-      else
-        join_vars
-      end
+    join_key = fn l ->
+      Map.take(l, [lvar])
+    end
+
+    left_join_key_syms = join_vars
 
     left_join_key = fn t ->
       Enum.reduce(left_join_key_syms, %{}, fn {:var, var}, acc ->
@@ -506,42 +522,26 @@ defmodule Elog.Query do
       end)
     end
 
-    #########################
-
-    [%{tuples: lt}, %{tuples: rt}] = xpro_relations
-
-    {products, products_cardinality} =
-      cartesian_product([%{tuples: lt}, %{tuples: rt}])
+    right_cardinality = Enum.count(right_relation.tuples)
 
     #########################
 
     new_tuples =
       case join_info[:join_type] do
         :normal ->
-          left_cardinality = Enum.count(left_relation[:tuples])
+          left_cardinality = Enum.count(left_relation.tuples)
 
-          if left_cardinality < products_cardinality do
+          if left_cardinality < right_cardinality do
             Elog.Db.hash_join(
-              {left_relation[:tuples], left_join_key},
-              {products, compound_join_key}
-          )
+              {left_relation.tuples, left_join_key},
+              {right_relation.tuples, join_key}
+            )
           else
-          Elog.Db.hash_join(
-              {products, compound_join_key},
-              {left_relation[:tuples], left_join_key}
-          )
+            Elog.Db.hash_join(
+              {right_relation.tuples, join_key},
+              {left_relation.tuples, left_join_key}
+            )
           end
-          |> Enum.map(fn
-            {{c1, c2}, r} ->
-              Enum.reduce([c1, c2, r], %{}, fn val, acc ->
-                Map.merge(acc, val)
-              end)
-
-            {l, {c1, c2}} ->
-              Enum.reduce([c1, c2, l], %{}, fn val, acc ->
-                Map.merge(acc, val)
-              end)
-          end)
           |> MapSet.new()
       end
 
@@ -552,29 +552,158 @@ defmodule Elog.Query do
       |> Enum.flat_map(fn var -> [{:var, var}] end)
 
     filtered =
-      Enum.reject(relations, fn %{relation_number: relation_number} ->
-        relation_number == left_relation_number ||
-          relation_number == right_relation_number
+      Enum.reject(relations, fn %Relation{number: relation_number} ->
+        relation_number == left_relation_number || relation_number == right_relation_number
       end)
 
+    new_relation = %Relation{
+      vars: new_vars,
+      tuples: new_tuples,
+      where: where,
+      number: relation_number
+    }
+
     [
-      %{
-        vars: new_vars,
-        tuples: new_tuples,
-        where: where,
-        relation_number: relation_number
-      }
-      | filtered
+      new_relation | filtered
     ]
   end
 
-  defp cartesian_product([
-         %{tuples: rel_tuples1},
-         %{tuples: rel_tuples2}
-       ]) do
+  defp indirect_join(
+         %{left: left, right: right, join_vars: join_vars} = join_info,
+         relations,
+         where,
+         _db,
+         relation_number
+       ) do
+    [left_relation, right_relation | _] =
+      xpro_relations =
+      relations
+      |> Enum.filter(fn %Relation{number: relation_number} ->
+        MapSet.member?(right, relation_number)
+      end)
+
+    # [left_relation, right_relation | _] = xpro_relations
+    join_vars = join_vars |> MapSet.new()
+
+    {:var, lvar} =
+      left_relation.vars
+      |> Enum.filter(fn {:var, _var} = join_var ->
+        MapSet.member?(join_vars, join_var)
+      end)
+      |> List.first()
+
+    {:var, rvar} =
+      right_relation.vars
+      |> Enum.filter(fn {:var, _var} = join_var ->
+        MapSet.member?(join_vars, join_var)
+      end)
+      |> List.first()
+
+    compound_join_key = fn {l, r} ->
+      %{^lvar => lvar_value} = l
+      %{^rvar => rvar_value} = r
+
+      %{
+        rvar => rvar_value,
+        lvar => lvar_value
+      }
+    end
+
+    left_relation_number =
+      left
+      |> Enum.to_list()
+      |> List.first()
+
+    right_relation_number =
+      right
+      |> Enum.to_list()
+      |> List.first()
+
+    left_relation =
+      Enum.find(relations, fn %Relation{number: relation_number} ->
+        relation_number == left_relation_number
+      end)
+
+    left_join_key_syms = left_relation.vars
+
+    left_join_key = fn t ->
+      Enum.reduce(left_join_key_syms, %{}, fn {:var, var}, acc ->
+        Map.put(acc, var, Map.fetch!(t, var))
+      end)
+    end
+
+    [lr, rr | _rest] = xpro_relations
+
+    {products, products_cardinality} = cartesian_product(lr, rr)
+
+    #########################
+
+    new_tuples =
+      case join_info[:join_type] do
+        :normal ->
+          left_cardinality = Enum.count(left_relation.tuples)
+
+          if left_cardinality < products_cardinality do
+            Elog.Db.hash_join(
+              {left_relation.tuples, left_join_key},
+              {products, compound_join_key}
+            )
+          else
+            Elog.Db.hash_join(
+              {products, compound_join_key},
+              {left_relation.tuples, left_join_key}
+            )
+          end
+          |> MapSet.new()
+      end
+
+    new_vars =
+      new_tuples
+      |> Enum.take(1)
+      |> Enum.flat_map(&Map.keys/1)
+      |> Enum.flat_map(fn var -> [{:var, var}] end)
+
+    filtered =
+      Enum.reject(relations, fn %Relation{number: relation_number} ->
+        relation_number == left_relation_number || relation_number == right_relation_number
+      end)
+
+    new_relation = %Relation{
+      vars: new_vars,
+      tuples: new_tuples,
+      where: where,
+      number: relation_number
+    }
+
+    [
+      new_relation | filtered
+    ]
+  end
+
+  # "and now for the tricky bit"
+  defp join(
+         %{left: _left, right: right, join_vars: _join_vars} = join_info,
+         relations,
+         where,
+         db,
+         relation_number
+       ) do
+    right_count = Enum.count(right)
+
+    if right_count > 1 do
+      indirect_join(join_info, relations, where, db, relation_number)
+    else
+      direct_join(join_info, relations, where, db, relation_number)
+    end
+  end
+
+  defp cartesian_product(
+         %Relation{tuples: left_tuples},
+         %Relation{tuples: right_tuples}
+       ) do
     products =
-      for tuple1 <- rel_tuples1,
-          tuple2 <- rel_tuples2 do
+      for tuple1 <- left_tuples,
+          tuple2 <- right_tuples do
         {tuple1, tuple2}
       end
       |> MapSet.new()

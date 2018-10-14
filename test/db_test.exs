@@ -247,6 +247,50 @@ defmodule ElogDbTest do
         end
       )
     end
+
+    test "wildcard/blank/placeholder" do
+      query = %{find: [~q(name)], where: [[:_, :name, ~q(name)]]}
+
+      db =
+        Db.new([
+          %{name: "Bill", something_else: "nope"},
+          %{no_name: "fine"},
+          %{name: "Sandy", another: "ok"}
+        ])
+
+      result = Db.query(db, query)
+
+      assert result == MapSet.new([%{name: "Bill"}, %{name: "Sandy"}])
+    end
+
+    test "wildcard/blank/placeholder with join" do
+      test_permutations(
+        [
+          [~q(e), :name, "Bill"],
+          [~q(e2), :friend_id, ~q(e)],
+          [~q(e2), :favorite_color, :_],
+          [~q(e2), :name, :_]
+        ],
+        fn variant ->
+          data = [
+            %{name: "Bill"},
+            %{name: "Sue", friend_id: 1},
+            %{name: "Johnny", friend_id: 1, favorite_color: :blue},
+            %{name: "Juan", friend_id: 1},
+            %{not_a_name: "ok", friend_id: 1, favorite_color: :green},
+            %{name: "Megan", friend_id: 1, favorite_color: :red}
+          ]
+
+          # find friends of Bill's, with names, who have a favorite color,
+          # but ignore what that color is
+          query = %{find: [~q(e2)], where: variant}
+
+          db = Db.new(data)
+          result = Db.query(db, query)
+          assert result == MapSet.new([%{e2: 3}, %{e2: 6}])
+        end
+      )
+    end
   end
 
   describe "transact" do

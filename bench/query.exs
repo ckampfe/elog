@@ -66,8 +66,41 @@ small_complex_db = Db.new(small_complex)
 medium_complex_db = Db.new(medium_complex)
 large_complex_db = Db.new(large_complex)
 
+color_query_with_wildcard = %{
+  find: [~q(e2)],
+  where: [
+    [~q(e), :name, "Bill"],
+    [~q(e2), :friend_id, ~q(e)],
+    [~q(e2), :favorite_color, :_]
+  ]
+}
+
+color_query_with_var = %{
+  find: [~q(e2)],
+  where: [
+    [~q(e), :name, "Bill"],
+    [~q(e2), :friend_id, ~q(e)],
+    [~q(e2), :favorite_color, ~q(favorite_color)]
+  ]
+}
+
+color_db =
+  Db.new([
+    %{name: "Bill"},
+    %{name: "Sue", friend_id: 1},
+    %{name: "Johnny", friend_id: 1, favorite_color: :blue},
+    %{name: "Juan", friend_id: 1},
+    %{name: "Megan", friend_id: 1, favorite_color: :red}
+  ])
+
 Benchee.run(
   %{
+    "color query with var" => fn ->
+      Db.query(color_db, color_query_with_var)
+    end,
+    "color query with wildcard" => fn ->
+      Db.query(color_db, color_query_with_wildcard)
+    end,
     "small simple variable find" => fn ->
       Db.query(small_simple_db, simple_variable_find)
     end,

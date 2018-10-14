@@ -10,6 +10,8 @@ defmodule Elog.Db do
   # [x] built-in aggregates in finds
   # [ ] user-defined aggregates in finds
   # [x] or
+  # [ ] cardinality: many (multimaps?)
+  # [ ] query planning
   # [ ] and (within or)
   # [ ] wildcards, like: [~q(e), :name, _]
   # [ ] retractions
@@ -81,6 +83,7 @@ defmodule Elog.Db do
   def query(db, q) do
     q
     |> Query.validate()
+    # |> Query.reorder_wheres()
     |> Query.to_relations(db)
     |> Query.extract_finds(q[:find])
     |> Query.compute_aggregates(q[:find])
@@ -295,8 +298,7 @@ defmodule Elog.Db do
         Map.put(acc, index, initialize_index(index))
       end)
 
-    Enum.reduce(initial_indexes, initial_indexes, fn {index_kind, index},
-                                                     idxs ->
+    Enum.reduce(initial_indexes, initial_indexes, fn {index_kind, index}, idxs ->
       new_index =
         Enum.reduce(datoms, index, fn datom, idx ->
           Index.insert(idx, datom)
@@ -333,7 +335,23 @@ defmodule Elog.Db do
           Enum.reduce(match_rows, acc, fn v, acc2 ->
             [{row, v} | acc2]
           end)
-  end
+      end
+    end)
+    |> Enum.map(fn
+      {{c1, c2}, r} ->
+        Enum.reduce([c1, c2, r], %{}, fn val, acc ->
+          Map.merge(acc, val)
+        end)
+
+      {l, {c1, c2}} ->
+        Enum.reduce([c1, c2, l], %{}, fn val, acc ->
+          Map.merge(acc, val)
+        end)
+      {l, r} ->
+        l_keyset = Map.keys(l) |> MapSet.new()
+        r_keyset = Map.keys(r) |> MapSet.new()
+        diff = MapSet.difference(r_keyset, l_keyset)
+        Map.merge(l, Map.take(r, diff))
     end)
   end
 end
