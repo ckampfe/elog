@@ -1,6 +1,6 @@
 defmodule Elog.Db do
   import Elog.Datom
-  alias Elog.Query
+  alias Elog.{Query, Relation}
   alias BiMultiMap, as: Multimap
   require Logger
 
@@ -316,43 +316,75 @@ defmodule Elog.Db do
   end
 
   def hash_join(
-        {left_tuples, left_join_function},
-        {right_tuples, right_join_function}
+        {left_relation,
+        left_join_function} = left,
+        {right_relation,
+        right_join_function} = right,
+        relation_number
       )
       when is_function(left_join_function) and is_function(right_join_function) do
+    left_cardinality = Enum.count(left_relation.tuples)
+    right_cardinality = Enum.count(right_relation.tuples)
+
+    # reorder if cardinality indicates we should
+    {{left_relation, left_join_function}, {right_relation, right_join_function}} =
+      if left_cardinality < right_cardinality do
+        {left, right}
+      else
+        {right, left}
+      end
+
+    left_tuples = left_relation.tuples
+    right_tuples = right_relation.tuples
+
     hashed_smaller =
       Enum.reduce(left_tuples, Multimap.new(), fn row, acc ->
         join_attr_value = left_join_function.(row)
         Multimap.put(acc, join_attr_value, row)
       end)
 
-    Enum.reduce(right_tuples, [], fn row, acc ->
-      case Multimap.get(hashed_smaller, right_join_function.(row)) do
-        [] ->
-          acc
+    new_tuples =
+      Enum.reduce(right_tuples, [], fn row, acc ->
+        case Multimap.get(hashed_smaller, right_join_function.(row)) do
+          [] ->
+            acc
 
-        match_rows ->
-          Enum.reduce(match_rows, acc, fn v, acc2 ->
-            [{row, v} | acc2]
+          match_rows ->
+            Enum.reduce(match_rows, acc, fn v, acc2 ->
+              [{row, v} | acc2]
+            end)
+        end
+      end)
+      |> Enum.map(fn
+        {{c1, c2}, r} ->
+          Enum.reduce([c1, c2, r], %{}, fn val, acc ->
+            Map.merge(acc, val)
           end)
-      end
-    end)
-    |> Enum.map(fn
-      {{c1, c2}, r} ->
-        Enum.reduce([c1, c2, r], %{}, fn val, acc ->
-          Map.merge(acc, val)
-        end)
 
-      {l, {c1, c2}} ->
-        Enum.reduce([c1, c2, l], %{}, fn val, acc ->
-          Map.merge(acc, val)
-        end)
-      {l, r} ->
-        l_keyset = Map.keys(l) |> MapSet.new()
-        r_keyset = Map.keys(r) |> MapSet.new()
-        diff = MapSet.difference(r_keyset, l_keyset)
-        Map.merge(l, Map.take(r, diff))
-    end)
+        {l, {c1, c2}} ->
+          Enum.reduce([c1, c2, l], %{}, fn val, acc ->
+            Map.merge(acc, val)
+          end)
+
+        {l, r} ->
+          l_keyset = Map.keys(l) |> MapSet.new()
+          r_keyset = Map.keys(r) |> MapSet.new()
+          diff = MapSet.difference(r_keyset, l_keyset)
+          Map.merge(l, Map.take(r, diff))
+      end)
+
+    new_vars =
+      new_tuples
+      |> Enum.take(1)
+      |> Enum.flat_map(&Map.keys/1)
+      |> Enum.flat_map(fn var -> [{:var, var}] end)
+
+    %Relation{
+      vars: new_vars,
+      tuples: new_tuples,
+      where: nil,
+      number: relation_number
+    }
   end
 end
 

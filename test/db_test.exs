@@ -11,8 +11,7 @@ defmodule ElogDbTest do
       db = Db.new([%{name: "Marsha", age: 7, size: 98.0}])
       result = Db.query(db, query)
 
-      assert result ==
-               MapSet.new([%{attr: :age}, %{attr: :name}, %{attr: :size}])
+      assert result == MapSet.new([%{attr: :age}, %{attr: :name}, %{attr: :size}])
     end
 
     test "find all attributes for all entities" do
@@ -95,8 +94,7 @@ defmodule ElogDbTest do
       db = Db.new([%{name: "Bill"}, %{name: "Sandy"}])
       result = Db.query(db, query)
 
-      assert result ==
-               MapSet.new([%{e: 1, name: "Bill"}, %{e: 2, name: "Sandy"}])
+      assert result == MapSet.new([%{e: 1, name: "Bill"}, %{e: 2, name: "Sandy"}])
     end
 
     # test "all literals with join" do
@@ -134,8 +132,7 @@ defmodule ElogDbTest do
 
           result = Db.query(db, query)
 
-          assert result ==
-                   MapSet.new([%{e: 2, e2: 1, name: "Sandy", name2: "Bill"}])
+          assert result == MapSet.new([%{e: 2, e2: 1, name: "Sandy", name2: "Bill"}])
         end
       )
     end
@@ -242,8 +239,7 @@ defmodule ElogDbTest do
 
           assert db.current_entity_id == 3
 
-          assert result ==
-                   MapSet.new([%{e: 1, eye_color: "Blue", name: "Marsha"}])
+          assert result == MapSet.new([%{e: 1, eye_color: "Blue", name: "Marsha"}])
         end
       )
     end
@@ -323,8 +319,7 @@ defmodule ElogDbTest do
 
       assert db.current_entity_id == 2
 
-      assert result ==
-               MapSet.new([%{e: 1, name: "Jamie"}, %{e: 2, name: "Jim"}])
+      assert result == MapSet.new([%{e: 1, name: "Jamie"}, %{e: 2, name: "Jim"}])
     end
 
     test "it does mutations with explicit and implicit elog/id" do
