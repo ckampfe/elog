@@ -13,7 +13,7 @@ defmodule Elog.Db do
   # [ ] cardinality: many (multimaps?)
   # [ ] query planning
   # [ ] and (within or)
-  # [ ] wildcards, like: [~q(e), :name, _]
+  # [x] wildcards, like: [~q(e), :name, _]
   # [ ] retractions
   # [ ] transaction log
   # [ ] parameterized queries (investigate `with` clause?)
