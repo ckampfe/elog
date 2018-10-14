@@ -5,6 +5,22 @@ defmodule ElogDbTest do
   import Elog.Syntax
   import TestHelper
 
+  setup_all do
+    on_exit(fn ->
+      IO.puts("")
+      IO.puts("")
+      [total_tests: total_tests] = :ets.lookup(:test_stats, :total_tests)
+
+      [total_permutations: total_permutations] = :ets.lookup(:test_stats, :total_permutations)
+
+      IO.puts(
+        "Ran #{total_permutations} total permutations for #{total_tests} tests that had permutations enabled"
+      )
+
+      :ok
+    end)
+  end
+
   describe "query" do
     test "find all entity attributes" do
       query = %{find: [~q(attr)], where: [[1, ~q(attr)]]}
