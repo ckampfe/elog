@@ -561,12 +561,10 @@ defmodule Elog.Query do
         relation_number == left_relation_number
       end)
 
-    left_join_key_syms = left_relation.vars
+    left_join_key_syms = left_relation.vars |> Enum.map(fn {:var, var} -> var end)
 
     left_join_key = fn t ->
-      Enum.reduce(left_join_key_syms, %{}, fn {:var, var}, acc ->
-        Map.put(acc, var, Map.fetch!(t, var))
-      end)
+      Map.take(t, left_join_key_syms)
     end
 
     [lr, rr | _rest] = xpro_relations

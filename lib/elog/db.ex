@@ -316,10 +316,8 @@ defmodule Elog.Db do
   end
 
   def hash_join(
-        {left_relation,
-        left_join_function} = left,
-        {right_relation,
-        right_join_function} = right,
+        {left_relation, left_join_function} = left,
+        {right_relation, right_join_function} = right,
         relation_number
       )
       when is_function(left_join_function) and is_function(right_join_function) do
