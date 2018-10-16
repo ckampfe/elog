@@ -381,13 +381,20 @@ defmodule Elog.Query do
   end
 
   defp datoms_to_tuples(filtered_datoms, symbols) do
-    filtered_datoms
-    |> Enum.map(fn datom ->
-      Enum.reduce(symbols, %{}, fn {{:var, var}, field}, acc ->
+    accesses =
+      Enum.map(symbols, fn {{:var, var}, field} ->
         %{^field => datom_index} = @datom_to_record_map
+        {var, datom_index}
+      end)
+
+    access_function = fn datom ->
+      Enum.reduce(accesses, %{}, fn {var, datom_index}, acc ->
         Map.put(acc, var, elem(datom, datom_index))
       end)
-    end)
+    end
+
+    filtered_datoms
+    |> Enum.map(access_function)
     |> MapSet.new()
   end
 
